@@ -1,0 +1,51 @@
+{
+    "name": "backend",
+    "version": "1.0.0",
+    "description": "Backend for AI Flashcard Application",
+    "main": "dist/server.js",
+    "scripts": {
+        "start": "node dist/server.js",
+        "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+        "build": "tsc",
+        "vercel-build": "tsc",
+        "test": "jest"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@aws-sdk/client-bedrock-runtime": "^3.751.0",
+        "@aws-sdk/client-s3": "^3.750.0",
+        "@prisma/client": "^6.4.1",
+        "bcryptjs": "^2.4.3",
+        "cors": "^2.8.5",
+        "date-fns": "^4.1.0",
+        "dotenv": "^16.0.3",
+        "express": "^4.18.2",
+        "helmet": "^7.0.0",
+        "jsonwebtoken": "^9.0.2",
+        "mammoth": "^1.9.0",
+        "mongoose": "^7.0.3",
+        "multer": "^1.4.5-lts.1",
+        "mysql2": "^3.12.0",
+        "openai": "^4.28.0",
+        "pdf.js-extract": "^0.2.1",
+        "stripe": "^17.7.0",
+        "youtube-transcript": "^1.2.1",
+        "zod": "^3.24.2"
+    },
+    "devDependencies": {
+        "@types/bcryptjs": "^2.4.6",
+        "@types/cors": "^2.8.13",
+        "@types/express": "^4.17.17",
+        "@types/jsonwebtoken": "^9.0.8",
+        "@types/multer": "^1.4.12",
+        "@types/node": "^18.15.11",
+        "ts-node": "^10.9.1",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.0.3"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
