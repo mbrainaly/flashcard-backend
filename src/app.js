@@ -28,7 +28,7 @@ catch (error) {
 }
 // CORS configuration with increased preflight timeout
 const corsOptions = {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: ['https://aiflashcard.net', 'https://www.aiflashcard.net', process.env.FRONTEND_URL || 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
