@@ -36,26 +36,17 @@ if (process.env.NODE_ENV !== 'production') {
 
 // CORS configuration with increased preflight timeout
 const corsOptions = {
-  origin: '*', // Allow all origins - Vercel config will restrict if needed
+  origin: ['https://aiflashcard.net', 'https://www.aiflashcard.net', process.env.FRONTEND_URL || 'http://localhost:3000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Length', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
   maxAge: 86400, // 24 hours
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
 
-// Apply CORS middleware to all routes
+// Middleware
 app.use(cors(corsOptions));
-
-// Handle preflight requests for all routes
-app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.status(204).send();
-});
 
 // Configure body parser with larger limits
 app.use(express.raw({ 
