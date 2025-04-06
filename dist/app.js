@@ -15,29 +15,47 @@ const notes_routes_1 = __importDefault(require("./routes/notes.routes"));
 const subscription_routes_1 = __importDefault(require("./routes/subscription.routes"));
 const quiz_routes_1 = __importDefault(require("./routes/quiz.routes"));
 const app = (0, express_1.default)();
-// Create uploads directory if it doesn't exist
-const uploadsDir = path_1.default.join(__dirname, '../uploads');
-try {
-    if (!fs_1.default.existsSync(uploadsDir)) {
-        fs_1.default.mkdirSync(uploadsDir, { recursive: true });
+// Handle uploads directory based on environment
+let uploadsDir = path_1.default.join(__dirname, '../uploads');
+// In production (Vercel), we'll use S3 or another cloud storage
+// This conditional check prevents file system operations in serverless environments
+if (process.env.NODE_ENV !== 'production') {
+    try {
+        if (!fs_1.default.existsSync(uploadsDir)) {
+            fs_1.default.mkdirSync(uploadsDir, { recursive: true });
+        }
+        console.log('Uploads directory configured:', uploadsDir);
+        // Serve static files from the uploads directory in development only
+        app.use('/uploads', express_1.default.static(uploadsDir));
+        console.log('Serving uploads from:', uploadsDir);
     }
-    console.log('Uploads directory configured:', uploadsDir);
+    catch (error) {
+        console.error('Error creating uploads directory:', error);
+    }
 }
-catch (error) {
-    console.error('Error creating uploads directory:', error);
+else {
+    console.log('Running in production mode. File uploads will use cloud storage.');
 }
 // CORS configuration with increased preflight timeout
 const corsOptions = {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: '*', // Allow all origins - Vercel config will restrict if needed
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Content-Length', 'X-Requested-With'],
     credentials: true,
     maxAge: 86400, // 24 hours
     preflightContinue: false,
     optionsSuccessStatus: 204
 };
-// Middleware
+// Apply CORS middleware to all routes
 app.use((0, cors_1.default)(corsOptions));
+// Handle preflight requests for all routes
+app.options('*', (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.status(204).send();
+});
 // Configure body parser with larger limits
 app.use(express_1.default.raw({
     type: 'application/octet-stream',
@@ -64,9 +82,6 @@ app.use((req, res, next) => {
     }
     next();
 });
-// Serve static files from the uploads directory
-app.use('/uploads', express_1.default.static(uploadsDir));
-console.log('Serving uploads from:', uploadsDir);
 // Routes
 app.use('/api/auth', auth_routes_1.default);
 app.use('/api/decks', deck_routes_1.default);
@@ -75,6 +90,15 @@ app.use('/api/ai', ai_routes_1.default);
 app.use('/api/notes', notes_routes_1.default);
 app.use('/api/subscription', subscription_routes_1.default);
 app.use('/api/quizzes', quiz_routes_1.default);
+// Health check endpoint for Vercel
+app.get('/api/health', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        message: 'Server is running',
+        environment: process.env.NODE_ENV || 'development',
+        timestamp: new Date().toISOString()
+    });
+});
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error('Error:', err);

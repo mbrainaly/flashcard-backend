@@ -6,8 +6,8 @@
     "scripts": {
         "start": "node dist/server.js",
         "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-        "build": "tsc",
-        "vercel-build": "tsc",
+        "build": "tsc && cp -r src/api dist/api",
+        "vercel-build": "tsc && cp -r src/api dist/api",
         "test": "jest"
     },
     "keywords": [],
