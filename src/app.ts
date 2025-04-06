@@ -36,9 +36,10 @@ if (process.env.NODE_ENV !== 'production') {
 
 // CORS configuration with increased preflight timeout
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000' || 'https://aiflashcard.net',
+  origin: ['https://aiflashcard.net', 'https://www.aiflashcard.net', 'http://localhost:3000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Length', 'X-Requested-With'],
   credentials: true,
   maxAge: 86400, // 24 hours
   preflightContinue: false,
@@ -47,6 +48,9 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
+
+// Handle OPTIONS requests explicitly
+app.options('*', cors(corsOptions));
 
 // Configure body parser with larger limits
 app.use(express.raw({ 
