@@ -4,24 +4,21 @@
         "src": "dist/server.js",
         "use": "@vercel/node"
     }],
-    "routes": [{
-        "src": "/(.*)",
-        "dest": "dist/server.js"
-    }],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "dist/server.js",
+            "headers": {
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Allow-Origin": "https://aiflashcard.net",
+                "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+                "Access-Control-Allow-Headers": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
+            }
+        }
+    ],
     "env": {
         "NODE_ENV": "production"
     },
-    "headers": [
-        {
-            "source": "/(.*)",
-            "headers": [
-                { "key": "Access-Control-Allow-Origin", "value": "https://aiflashcard.net" },
-                { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
-                { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" },
-                { "key": "Access-Control-Allow-Credentials", "value": "true" }
-            ]
-        }
-    ],
     "functions": {
         "dist/server.js": {
             "memory": 1024,
