@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import stripe, { SUBSCRIPTION_PLANS } from '../config/stripe';
 import User from '../models/User';
+import Plan from '../models/Plan';
 
 // @desc    Create a checkout session for subscription
 // @route   POST /api/subscription/create-checkout-session
@@ -182,3 +183,86 @@ export const getSubscription = async (req: Request, res: Response): Promise<void
     res.status(500).json({ success: false, message: 'Failed to get subscription details' });
   }
 }; 
+
+// @desc    Get available plans from DB (fallback to config)
+// @route   GET /api/subscription/plans
+// @access  Private
+export const getPlans = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const plans = await Plan.find({}).lean();
+    if (plans.length > 0) {
+      res.status(200).json({ success: true, plans });
+      return;
+    }
+
+    const fallback = [
+      {
+        id: SUBSCRIPTION_PLANS.BASIC.id,
+        name: SUBSCRIPTION_PLANS.BASIC.name,
+        price: SUBSCRIPTION_PLANS.BASIC.price,
+        monthlyCredits: SUBSCRIPTION_PLANS.BASIC.credits,
+        allowDocuments: false,
+        allowYoutubeAnalyze: false,
+        allowAIFlashcards: false,
+        allowAIStudyAssistant: false,
+        monthlyQuizLimit: 3,
+        monthlyNotesLimit: 3,
+        features: [
+          'Unlimited Non-AI Flashcards',
+          '50 Credits / month',
+          'No Document Uploading',
+          'No YouTube Video URL Analyze',
+          '3 Quiz Generation',
+          '3 Notes Generation',
+          'No AI Study Assistant',
+        ],
+      },
+      {
+        id: SUBSCRIPTION_PLANS.PRO.id,
+        name: SUBSCRIPTION_PLANS.PRO.name,
+        price: SUBSCRIPTION_PLANS.PRO.price,
+        monthlyCredits: SUBSCRIPTION_PLANS.PRO.credits,
+        allowDocuments: true,
+        allowYoutubeAnalyze: true,
+        allowAIFlashcards: true,
+        allowAIStudyAssistant: true,
+        monthlyQuizLimit: 50,
+        monthlyNotesLimit: 50,
+        features: [
+          'Unlimited AI flashcards',
+          '200 Credits / month',
+          'Document Uploading',
+          'YouTube Video URL Analyze',
+          '50 Quiz Generation',
+          '50 Notes Generation',
+          'AI Study Assistant',
+        ],
+      },
+      {
+        id: SUBSCRIPTION_PLANS.TEAM.id,
+        name: SUBSCRIPTION_PLANS.TEAM.name,
+        price: SUBSCRIPTION_PLANS.TEAM.price,
+        monthlyCredits: SUBSCRIPTION_PLANS.TEAM.credits,
+        allowDocuments: true,
+        allowYoutubeAnalyze: true,
+        allowAIFlashcards: true,
+        allowAIStudyAssistant: true,
+        monthlyQuizLimit: null,
+        monthlyNotesLimit: null,
+        features: [
+          'Unlimited AI flashcards',
+          '500 Credits / month',
+          'Document Uploading',
+          'YouTube Video URL Analyze',
+          'Unlimited Quiz Generation',
+          'Unlimited Notes Generation',
+          'AI Study Assistant',
+        ],
+      },
+    ];
+    res.status(200).json({ success: true, plans: fallback });
+  } catch (error) {
+    console.error('Error getting plans:', error);
+    res.status(500).json({ success: false, message: 'Failed to load plans' });
+  }
+};

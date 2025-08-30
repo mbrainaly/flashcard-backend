@@ -1,7 +1,12 @@
 import { Request, Response } from 'express';
 import openaiClient from '../config/openai';
+import User from '../models/User';
+import { PLAN_RULES, currentPeriodKey } from '../utils/plan';
+import { getPlanRulesForId } from '../utils/getPlanRules'
+import mongoose from 'mongoose';
 import { Quiz, Note } from '../models';
 import type { IQuiz, IQuizAttempt } from '../models/Quiz';
+import { deductCredits, refundCredits } from '../utils/credits';
 
 // Create a new quiz
 export const createQuiz = async (req: Request, res: Response): Promise<void> => {
@@ -76,9 +81,10 @@ export const getQuiz = async (req: Request, res: Response): Promise<void> => {
 
     console.log('Found quiz:', quiz.title);
 
+    // Frontend expects { success, quiz }
     res.status(200).json({
       success: true,
-      data: quiz  // Changed to match the expected response format
+      quiz
     });
   } catch (error) {
     console.error('Error fetching quiz:', error);
@@ -333,6 +339,25 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
     const { numQuestions = 10 } = req.body; // Default to 10 questions if not specified
     const userId = req.user._id;
 
+    // Enforce monthly quiz generation limit by plan
+    const user = await User.findById(userId)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = await getPlanRulesForId(planId)
+    const key = currentPeriodKey()
+    const usage = user?.subscription?.usage || { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
+    const monthUsage = usage.monthKey === key ? usage : { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
+    if (typeof rules.monthlyQuizLimit === 'number' && monthUsage.quizzesGenerated >= rules.monthlyQuizLimit) {
+      res.status(403).json({ success: false, message: 'Monthly quiz generation limit reached for your plan' })
+      return
+    }
+
+    // Charge 2 credits for quiz generation
+    const charge = await deductCredits(userId, 2)
+    if (!charge.ok) {
+      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
+      return
+    }
+
     // Validate numQuestions
     const questionCount = Math.min(Math.max(1, Number(numQuestions)), 100);
 
@@ -391,19 +416,70 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
       throw new Error('Invalid quiz data format received from OpenAI');
     }
 
+    // Normalize questions to match schema
+    const normalizedQuestions = quizData.questions.map((q: any) => {
+      const rawType = (q.type || '').toString().toLowerCase().replace(/\s+/g, '-').replace('true/false', 'true-false')
+      const type: 'multiple-choice' | 'true-false' | 'short-answer' =
+        rawType === 'true-false' ? 'true-false' : rawType === 'short-answer' ? 'short-answer' : 'multiple-choice'
+
+      if (type === 'true-false') {
+        const correct = typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex :
+          (typeof q.correctAnswer === 'number' ? q.correctAnswer : (String(q.answer || '').toLowerCase().startsWith('t') ? 0 : 1))
+        return {
+          question: String(q.question || 'Untitled question'),
+          options: ['True', 'False'],
+          correctOptionIndex: correct === 0 ? 0 : 1,
+          explanation: String(q.explanation || ''),
+          type,
+          difficulty: ['beginner','intermediate','advanced'].includes((q.difficulty||'').toString()) ? q.difficulty : 'intermediate',
+        }
+      }
+
+      if (type === 'short-answer') {
+        const answer = String(q.answer || (Array.isArray(q.options) && q.options.length > 0 ? q.options[0] : '')).trim()
+        return {
+          question: String(q.question || 'Untitled question'),
+          options: [answer],
+          correctOptionIndex: 0,
+          explanation: String(q.explanation || ''),
+          type,
+          difficulty: ['beginner','intermediate','advanced'].includes((q.difficulty||'').toString()) ? q.difficulty : 'intermediate',
+        }
+      }
+
+      // multiple-choice default
+      const options = Array.isArray(q.options) ? q.options.map((o: any) => String(o ?? '')) : []
+      const nonEmptyOptions = options.filter((o: string) => o.trim() !== '')
+      return {
+        question: String(q.question || 'Untitled question'),
+        options: nonEmptyOptions.length >= 2 ? nonEmptyOptions : ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
+        correctOptionIndex: typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex :
+          (typeof q.correctAnswer === 'number' ? q.correctAnswer : 0),
+        explanation: String(q.explanation || ''),
+        type,
+        difficulty: ['beginner','intermediate','advanced'].includes((q.difficulty||'').toString()) ? q.difficulty : 'intermediate',
+      }
+    })
+
     console.log('Creating quiz in database');
 
-    // Create quiz in database
+    // Create or update quiz in database (use 'owner' field as per schema)
     const quiz = await Quiz.findOneAndUpdate(
-      { noteId: id, userId },
+      { noteId: id, owner: userId },
       {
         title: `Quiz: ${note.title}`,
         noteId: id,
-        userId,
-        questions: quizData.questions,
+        owner: userId,
+        questions: normalizedQuestions,
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true, runValidators: true }
     );
+
+    // Increment monthly usage counter for quizzes
+    await User.findByIdAndUpdate(userId, {
+      $set: { 'subscription.usage.monthKey': key },
+      $inc: { 'subscription.usage.quizzesGenerated': 1 },
+    })
 
     console.log('Quiz created successfully');
 

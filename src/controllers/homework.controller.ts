@@ -1,6 +1,9 @@
 import { Request, Response } from 'express'
 import openaiClient from '../config/openai'
 import { extractTextFromFile } from '../utils/fileProcessing'
+import User from '../models/User'
+import { PLAN_RULES } from '../utils/plan'
+import { deductCredits } from '../utils/credits'
 
 // @desc    Get homework help
 // @route   POST /api/ai/homework-help
@@ -8,6 +11,21 @@ import { extractTextFromFile } from '../utils/fileProcessing'
 export const getHomeworkHelp = async (req: Request, res: Response): Promise<void> => {
   try {
     const { subject, question } = req.body
+    // Plan gating: AI study assistant must be allowed
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = PLAN_RULES[planId]
+    if (!rules.allowAIStudyAssistant) {
+      res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
+      return
+    }
+
+    // Deduct 1 credit for AI assistant usage
+    const charge = await deductCredits(req.user._id, 1)
+    if (!charge.ok) {
+      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
+      return
+    }
     let fileContent = ''
 
     if (!subject || !question) {

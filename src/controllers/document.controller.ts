@@ -1,4 +1,6 @@
 import { Request, Response } from 'express'
+import User from '../models/User'
+import { PLAN_RULES } from '../utils/plan'
 import mammoth from 'mammoth'
 import { PDFExtract, PDFExtractResult } from 'pdf.js-extract'
 import { promisify } from 'util'
@@ -17,6 +19,14 @@ interface PDFPage {
 
 export const analyzeDocument = async (req: Request, res: Response) => {
   try {
+    // Plan gating: documents allowed only for Pro/Team
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = PLAN_RULES[planId]
+    if (!rules.allowDocuments) {
+      return res.status(403).json({ success: false, message: 'Your plan does not allow document uploading' })
+    }
+
     if (!req.file) {
       return res.status(400).json({
         success: false,

@@ -1,5 +1,8 @@
 import { Request, Response } from 'express'
 import openaiClient from '../config/openai'
+import { deductCredits } from '../utils/credits'
+import User from '../models/User'
+import { PLAN_RULES } from '../utils/plan'
 
 // @desc    Generate practice problems
 // @route   POST /api/ai/generate-problems
@@ -7,6 +10,21 @@ import openaiClient from '../config/openai'
 export const generateProblems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { subject, topic, difficulty, numProblems } = req.body
+    // Plan gating: AI study assistant must be allowed
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = PLAN_RULES[planId]
+    if (!rules.allowAIStudyAssistant) {
+      res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
+      return
+    }
+
+    // Deduct 1 credit for generation (same as flashcards)
+    const charge = await deductCredits(req.user._id, 1)
+    if (!charge.ok) {
+      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
+      return
+    }
 
     if (!subject || !topic || !difficulty || !numProblems) {
       res.status(400).json({
@@ -77,6 +95,14 @@ Return the problems as a JSON array with this structure:
 export const checkAnswer = async (req: Request, res: Response): Promise<void> => {
   try {
     const { problemId, userAnswer, correctAnswer } = req.body
+    // Plan gating: AI study assistant must be allowed
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = PLAN_RULES[planId]
+    if (!rules.allowAIStudyAssistant) {
+      res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
+      return
+    }
 
     if (!userAnswer || !correctAnswer) {
       res.status(400).json({

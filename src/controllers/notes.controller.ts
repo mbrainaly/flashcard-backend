@@ -1,11 +1,267 @@
-import { Request, Response } from 'express';
-import { YoutubeTranscript } from 'youtube-transcript';
-import openaiClient from '../config/openai';
-import { Note } from '../models';
+import { Request, Response } from 'express'
+import { YoutubeTranscript } from 'youtube-transcript'
+import openaiClient from '../config/openai'
+import User from '../models/User'
+import { PLAN_RULES, currentPeriodKey } from '../utils/plan'
+import { getPlanRulesForId } from '../utils/getPlanRules'
+import { deductCredits, refundCredits } from '../utils/credits'
+import { CREDIT_COSTS } from '../config/credits'
+import { Note } from '../models'
+import ytdl from 'ytdl-core'
+import { extractTextFromFile } from '../utils/fileProcessing'
+import { supadata } from '../config/supadata'
+
+// Helper: extract YouTube video ID from multiple URL formats
+function extractYouTubeId(input: string): string | null {
+  // Supports: watch?v=, youtu.be/, embed/, shorts/, live/
+  const patterns = [
+    /(?:v=|\/)([a-zA-Z0-9_-]{11})(?:[&?#].*)?$/, // generic capture of 11-char ID
+    /youtu\.be\/(.{11})/,
+  ]
+  for (const rx of patterns) {
+    const m = input.match(rx)
+    if (m && m[1]) return m[1]
+  }
+  return null
+}
+
+// Parse YouTube timedtext JSON3 into string with timestamps
+function parseTimedTextJson3(json: any): string {
+  if (!json || !Array.isArray(json.events)) return ''
+  const lines: string[] = []
+  for (const ev of json.events) {
+    const startMs = ev.tStartMs ?? 0
+    const minutes = Math.floor(startMs / 1000 / 60)
+    const seconds = Math.floor((startMs / 1000) % 60)
+    const timestamp = `[${minutes}:${seconds.toString().padStart(2, '0')}]`
+    const segs = ev.segs?.map((s: any) => s.utf8).join('') || ''
+    const text = segs.replace(/\n/g, ' ').trim()
+    if (text) {
+      lines.push(`${timestamp} ${text}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+async function fetchTimedTextTranscript(videoId: string, langCodes: string[]): Promise<string> {
+  // First, list available tracks to discover exact lang+kind
+  try {
+    const listResp = await fetch(`https://www.youtube.com/api/timedtext?type=list&v=${videoId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    })
+    const xml = await listResp.text()
+    // Try to find preferred tracks
+    const trackRegex = /<track\s+[^>]*lang_code="([^"]+)"[^>]*?(?:kind="([^"]+)")?[^>]*>/g
+    const tracks: { lang: string; kind?: string }[] = []
+    let m: RegExpExecArray | null
+    while ((m = trackRegex.exec(xml)) !== null) {
+      tracks.push({ lang: m[1], kind: m[2] })
+    }
+
+    // Choose the best track
+    const preferred = tracks.find(t => langCodes.includes(t.lang)) || tracks[0]
+    if (preferred) {
+      const query = new URLSearchParams({ v: videoId, fmt: 'json3', lang: preferred.lang })
+      if (preferred.kind) query.set('kind', preferred.kind)
+      const ttResp = await fetch(`https://www.youtube.com/api/timedtext?${query.toString()}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      })
+      if (ttResp.ok) {
+        const data = await ttResp.json().catch(() => null)
+        const text = parseTimedTextJson3(data)
+        if (text) return text
+      }
+    }
+  } catch (_) {
+    // ignore and proceed to direct attempts
+  }
+
+  // Direct attempts with common combinations (including auto-generated kind=asr)
+  for (const lang of langCodes) {
+    for (const kind of [undefined, 'asr'] as const) {
+      const query = new URLSearchParams({ v: videoId, fmt: 'json3', lang })
+      if (kind) query.set('kind', kind)
+      try {
+        const resp = await fetch(`https://www.youtube.com/api/timedtext?${query.toString()}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        })
+        if (!resp.ok) continue
+        const data = await resp.json().catch(() => null)
+        const text = parseTimedTextJson3(data)
+        if (text) return text
+      } catch (_) {
+        // try next
+      }
+    }
+  }
+
+  // Final fallback: use ytdl-core to get player_response and caption tracks
+  try {
+    const info = await ytdl.getInfo(videoId)
+    const tracks = info.player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks || []
+    if (Array.isArray(tracks) && tracks.length > 0) {
+      // Prefer English variants
+      const preferred = tracks.find((t: any) => /^(en|en-GB|en-US)/i.test(t.languageCode)) || tracks[0]
+      if (preferred?.baseUrl) {
+        const url = `${preferred.baseUrl}&fmt=json3`
+        const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        if (resp.ok) {
+          const data = await resp.json().catch(() => null)
+          const text = parseTimedTextJson3(data)
+          if (text) return text
+        }
+      }
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  return ''
+}
+
+// Helper: try fetching transcript with fallbacks
+async function fetchTranscriptWithFallback(videoId: string, originalUrl: string): Promise<string> {
+  // 0) Supadata direct transcript (if available)
+  try {
+    // Try with URL first
+    let sd: any = await supadata.youtube.transcript({ url: originalUrl, text: true })
+    // If nothing, try with videoId
+    if (!sd) {
+      sd = await supadata.youtube.transcript({ videoId, text: true })
+    }
+
+    let sdText = ''
+    if (typeof sd === 'string') {
+      sdText = sd
+    } else if (sd && typeof sd.content === 'string') {
+      sdText = sd.content
+    } else if (sd && Array.isArray(sd.segments)) {
+      sdText = sd.segments.map((s: any) => s.text).join(' ')
+    }
+
+    if (sdText && sdText.trim().length > 0) {
+      return sdText
+    }
+  } catch (e) {
+    console.warn('Supadata transcript failed, falling back:', (e as Error).message)
+  }
+
+  // Try default, then preferred English variants
+  const preferredLangs = ['en', 'en-US', 'en-GB']
+
+  // 1) Library-based approach first
+  for (const lang of [undefined, ...preferredLangs] as (string | undefined)[]) {
+    try {
+      const resp = await YoutubeTranscript.fetchTranscript(videoId, lang ? { lang } : undefined)
+      const text = resp
+        .map(item => `[${Math.floor(item.offset / 1000 / 60)}:${Math.floor((item.offset / 1000) % 60).toString().padStart(2, '0')}] ${item.text}`)
+        .join('\n')
+      if (text && text.trim().length > 0) return text
+    } catch (e) {
+      // try next language
+    }
+  }
+
+  // 2) Fallback to YouTube timedtext endpoint (supports auto-generated captions)
+  const tt = await fetchTimedTextTranscript(videoId, preferredLangs)
+  if (tt && tt.trim().length > 0) return tt
+
+  throw new Error('No transcript available after language fallbacks')
+}
+
+// @desc    Get homework help
+// @route   POST /api/ai/homework-help
+// @access  Private
+export const getHomeworkHelp = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { subject, question } = req.body
+    let fileContent = ''
+
+    if (!subject || !question) {
+      res.status(400).json({
+        success: false,
+        message: 'Subject and question are required'
+      })
+      return
+    }
+
+    // Process uploaded file if present
+    if (req.file) {
+      try {
+        fileContent = await extractTextFromFile(req.file)
+      } catch (error) {
+        console.error('Error processing file:', error)
+        res.status(400).json({
+          success: false,
+          message: 'Failed to process uploaded file'
+        })
+        return
+      }
+    }
+
+    const response = await openaiClient.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        {
+          role: 'system',
+          content: `You are an expert tutor helping students with their homework. You specialize in ${subject}.
+          
+Provide detailed, step-by-step solutions that:
+1. Break down complex problems into manageable parts
+2. Explain the reasoning behind each step
+3. Include relevant formulas, theories, or concepts
+4. Provide examples when helpful
+5. Highlight key learning points
+6. Suggest additional practice or resources
+
+Format your response in clear HTML with:
+- Main points in <h3> tags
+- Steps in <ol> or <ul> tags
+- Important concepts in <strong> tags
+- Formulas in <code> tags
+- Examples in <blockquote> tags
+- References or resources in <aside> tags
+
+Keep explanations clear and educational, encouraging understanding rather than just providing answers.`
+        },
+        {
+          role: 'user',
+          content: `Question: ${question}
+${fileContent ? `\nAdditional Context:\n${fileContent}` : ''}`
+        }
+      ],
+      temperature: 0.7,
+    })
+
+    const answer = response.choices[0].message.content || ''
+
+    res.status(200).json({
+      success: true,
+      answer
+    })
+  } catch (error) {
+    console.error('Error getting homework help:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get homework help'
+    })
+  }
+}
 
 export const generateNotes = async (req: Request, res: Response): Promise<void> => {
   try {
     const { content, type } = req.body;
+    // Enforce plan feature gating (e.g., YouTube analysis) and monthly usage limits
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = await getPlanRulesForId(planId)
+    const key = currentPeriodKey()
+    const usage = user?.subscription?.usage || { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
+    const monthUsage = usage.monthKey === key ? usage : { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
+    if (typeof rules.monthlyNotesLimit === 'number' && monthUsage.notesGenerated >= rules.monthlyNotesLimit) {
+      res.status(403).json({ success: false, message: 'Monthly notes generation limit reached for your plan' })
+      return
+    }
     console.log('Received request:', { type, content });
 
     if (!content) {
@@ -28,41 +284,39 @@ export const generateNotes = async (req: Request, res: Response): Promise<void> 
         prompt = `Convert the following content into well-structured study notes:\n\n${content}`;
         break;
       case 'video':
-        // Extract video ID for cleaner prompt
-        const youtubeRegex = /(?:youtu\.be\/|youtube\.com\/watch\?v=)([a-zA-Z0-9_-]+)/i;
-        const match = content.match(youtubeRegex);
+        if (!rules.allowYoutubeAnalyze) {
+          res.status(403).json({ success: false, message: 'Your plan does not allow YouTube URL analysis' })
+          return;
+        }
+        const videoId = extractYouTubeId(content || '')
         
-        if (!match || !match[1]) {
+        if (!videoId) {
           console.error('Invalid YouTube URL format:', content);
           res.status(400).json({
             success: false,
-            message: 'Invalid YouTube URL format. Please provide a valid YouTube URL (e.g., https://youtube.com/watch?v=... or https://youtu.be/...).'
+            message: 'Invalid YouTube URL. Please provide a valid YouTube link (watch, youtu.be, embed, or shorts).'
           });
           return;
         }
 
-        const videoId = match[1];
         console.log('Processing video ID:', videoId);
 
         try {
-          // Fetch video transcript
-          const transcriptResponse = await YoutubeTranscript.fetchTranscript(videoId);
-          transcript = transcriptResponse
-            .map(item => `[${Math.floor(item.offset / 1000 / 60)}:${Math.floor((item.offset / 1000) % 60).toString().padStart(2, '0')}] ${item.text}`)
-            .join('\n');
+          // Supadata first, then other fallbacks
+          transcript = await fetchTranscriptWithFallback(videoId, content)
           
           if (!transcript) {
-            throw new Error('No transcript available');
+            throw new Error('No transcript available')
           }
 
           console.log('Successfully fetched transcript');
         } catch (error) {
-          console.error('Error fetching transcript:', error);
+          console.error('Error fetching transcript:', error)
           res.status(400).json({
             success: false,
-            message: 'Failed to fetch video transcript. Please ensure the video has subtitles enabled.'
-          });
-          return;
+            message: 'Failed to fetch video transcript. Ensure captions are available (or try another video).'
+          })
+          return
         }
 
         prompt = `Create comprehensive study notes from this YouTube video transcript:
@@ -85,6 +339,13 @@ Format the entire response in clean HTML without any markdown or other formattin
         break;
       default:
         prompt = `Create organized study notes from the following:\n\n${content}`;
+    }
+
+    // Charge 3 credits for notes generation
+    const charge = await deductCredits(req.user._id, CREDIT_COSTS.notesAnalysis)
+    if (!charge.ok) {
+      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
+      return
     }
 
     console.log('Sending prompt to OpenAI');
@@ -130,52 +391,38 @@ Your response must follow these strict rules:
     // Clean up the response
     generatedNotes = generatedNotes
       .trim()
-      // Remove any markdown code block markers
       .replace(/^```html\s*/i, '')
       .replace(/\s*```$/i, '')
-      // Remove any XML or DOCTYPE declarations
       .replace(/^\s*<\?xml[^>]*\?>\s*/i, '')
       .replace(/^\s*<!DOCTYPE[^>]*>\s*/i, '')
-      // Remove any comments
       .replace(/<!--[\s\S]*?-->/g, '')
-      // Remove any html/body tags
       .replace(/<\/?html[^>]*>/gi, '')
       .replace(/<\/?body[^>]*>/gi, '')
-      // Remove any extra whitespace between tags
       .replace(/>\s+</g, '><')
-      // Ensure proper spacing
       .trim();
 
-    console.log('Cleaned notes:', generatedNotes);
-
-    // Validate the HTML structure
     if (!generatedNotes.startsWith('<h1>') && !generatedNotes.startsWith('<h1 ')) {
-      console.log('Adding h1 wrapper');
       generatedNotes = `<h1>Study Notes</h1>${generatedNotes}`;
     }
 
-    // Ensure all content is wrapped in HTML tags
     if (!/^<[^>]+>/.test(generatedNotes)) {
-      console.log('Adding div wrapper');
       generatedNotes = `<div>${generatedNotes}</div>`;
     }
 
-    // Create response object
-    const responseObj = {
-      success: true,
-      notes: generatedNotes
-    };
-
-    // Convert to JSON string
+    const responseObj = { success: true, notes: generatedNotes };
     const jsonString = JSON.stringify(responseObj);
-    console.log('Final response length:', jsonString.length);
-
-    // Set headers and send response
     res.setHeader('Content-Type', 'application/json');
     res.status(200).send(jsonString);
 
+    // Increment monthly usage counter for notes
+    await User.findByIdAndUpdate(req.user._id, {
+      $set: { 'subscription.usage.monthKey': key },
+      $inc: { 'subscription.usage.notesGenerated': 1 },
+    })
+
   } catch (error) {
     console.error('Error generating notes:', error);
+    try { await refundCredits(req.user._id, CREDIT_COSTS.notesAnalysis) } catch (_) {}
     res.status(500).json({
       success: false,
       message: 'Failed to generate notes. Please try again.'

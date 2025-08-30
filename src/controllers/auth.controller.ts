@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import User from '../models/User';
+import { sendMail } from '../config/mail';
 
 // Generate JWT Token
 const generateToken = (id: string): string => {
@@ -70,6 +73,89 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+// @desc    Request password reset
+// @route   POST /api/auth/forgot-password
+// @access  Public
+export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body
+    if (!email) {
+      res.status(400).json({ success: false, message: 'Email is required' })
+      return
+    }
+
+    const user = await User.findOne({ email })
+    // For security, return success even if user not found
+    if (!user) {
+      res.status(200).json({ success: true, message: 'If an account exists, a reset email was sent.' })
+      return
+    }
+
+    // Generate token
+    const token = crypto.randomBytes(32).toString('hex')
+    const expires = new Date(Date.now() + 1000 * 60 * 60) // 1 hour
+    user.resetPasswordToken = token
+    user.resetPasswordExpires = expires
+    await user.save({ validateBeforeSave: false })
+
+    const appBase = process.env.FRONTEND_URL || 'http://localhost:3000'
+    const resetUrl = `${appBase}/auth/reset-password?token=${token}`
+
+    const html = `
+      <p>Hello ${user.name || ''},</p>
+      <p>You (or someone) requested a password reset for your account.</p>
+      <p>Click the link below to reset your password. This link will expire in 1 hour.</p>
+      <p><a href="${resetUrl}">Reset your password</a></p>
+      <p>If you did not request this, you can safely ignore this email.</p>
+    `
+
+    await sendMail({
+      to: email,
+      subject: 'Reset your password',
+      html,
+      fromName: 'AI Flashcards'
+    })
+
+    res.status(200).json({ success: true, message: 'Reset email sent' })
+  } catch (error) {
+    console.error('Error in forgotPassword:', error)
+    res.status(500).json({ success: false, message: 'Server error while sending reset email' })
+  }
+}
+
+// @desc    Reset password
+// @route   POST /api/auth/reset-password
+// @access  Public
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, password } = req.body
+    if (!token || !password) {
+      res.status(400).json({ success: false, message: 'Token and new password are required' })
+      return
+    }
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: new Date() },
+    })
+
+    if (!user) {
+      res.status(400).json({ success: false, message: 'Invalid or expired reset token' })
+      return
+    }
+
+    user.password = password
+    user.resetPasswordToken = null
+    user.resetPasswordExpires = null
+    await user.save()
+
+    res.status(200).json({ success: true, message: 'Password reset successful' })
+  } catch (error) {
+    console.error('Error in resetPassword:', error)
+    res.status(500).json({ success: false, message: 'Server error during password reset' })
+  }
+}
+
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
@@ -87,7 +173,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check for user email
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+password');
     if (!user) {
       res.status(401).json({ 
         success: false,
@@ -96,12 +182,40 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
+    // Log login attempt details
+    console.log('Login attempt:', {
+      email,
+      provider: user.provider,
+      hasPassword: !!user.password,
+      passwordLength: user.password ? user.password.length : 0
+    });
+
+    // Check if user has a password (Google users might not have one initially)
+    if (!user.password) {
       res.status(401).json({ 
         success: false,
-        message: 'Invalid credentials' 
+        message: 'This account doesn\'t have a password. Please use Google login or set a password in your profile.' 
+      });
+      return;
+    }
+
+    // Check password with detailed logging
+    try {
+      const isMatch = await bcrypt.compare(password, user.password);
+      console.log('Password check result:', { isMatch });
+      
+      if (!isMatch) {
+        res.status(401).json({ 
+          success: false,
+          message: 'Invalid credentials' 
+        });
+        return;
+      }
+    } catch (error) {
+      console.error('Error comparing passwords:', error);
+      res.status(401).json({ 
+        success: false,
+        message: 'Error validating credentials' 
       });
       return;
     }
@@ -146,7 +260,8 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
         id: user._id,
         name: user.name,
         email: user.email,
-        subscription: user.subscription
+        subscription: user.subscription,
+        provider: user.provider
       }
     });
   } catch (error) {
@@ -220,13 +335,22 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
 // @access  Private
 export const changePassword = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword, isGoogleUser } = req.body;
 
-    // Validate input
-    if (!currentPassword || !newPassword) {
+    // Validate input for regular users
+    if (!isGoogleUser && (!currentPassword || !newPassword)) {
       res.status(400).json({ 
         success: false,
         message: 'Please provide current and new password' 
+      });
+      return;
+    }
+    
+    // For Google users, only new password is required
+    if (isGoogleUser && !newPassword) {
+      res.status(400).json({ 
+        success: false,
+        message: 'Please provide new password' 
       });
       return;
     }
@@ -241,19 +365,49 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check current password
-    const isMatch = await user.comparePassword(currentPassword);
-    if (!isMatch) {
-      res.status(401).json({ 
-        success: false,
-        message: 'Current password is incorrect' 
-      });
-      return;
+    // For Google users, skip password check
+    if (!isGoogleUser && user.provider !== 'google') {
+      // Check current password
+      const isMatch = await user.comparePassword(currentPassword);
+      if (!isMatch) {
+        res.status(401).json({ 
+          success: false,
+          message: 'Current password is incorrect' 
+        });
+        return;
+      }
     }
 
+    console.log('Before password update - User:', {
+      email: user.email,
+      provider: user.provider,
+      hasPassword: !!user.password,
+      isGoogleUser: isGoogleUser
+    });
+    
     // Update password
     user.password = newPassword;
-    await user.save();
+    
+    // If this is a Google user setting a password, ensure they can login with password too
+    if (isGoogleUser || user.provider === 'google') {
+      console.log('Google user setting password');
+    }
+    
+    // Save with explicit runValidators option
+    await user.save({ validateBeforeSave: true });
+    
+    // Verify the password was saved by retrieving the user again
+    const updatedUser = await User.findById(user._id).select('+password');
+    if (updatedUser) {
+      console.log('After password update - User:', {
+        email: updatedUser.email,
+        provider: updatedUser.provider,
+        hasPassword: !!updatedUser.password,
+        passwordLength: updatedUser.password ? updatedUser.password.length : 0
+      });
+    } else {
+      console.log('After password update - user not found when reloading');
+    }
 
     res.status(200).json({
       success: true,
@@ -261,9 +415,83 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     });
   } catch (error) {
     console.error('Error changing password:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Server error during password change' 
+      message: 'Server error during password change'
     });
   }
-}; 
+};
+
+// @desc    Google OAuth authentication
+// @route   POST /api/auth/google
+// @access  Public
+export const googleAuth = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, name, image, providerId } = req.body;
+
+    if (!email || !name) {
+      res.status(400).json({
+        success: false,
+        message: 'Email and name are required'
+      });
+      return;
+    }
+
+    // Check if user already exists
+    let user = await User.findOne({ email });
+
+    if (user) {
+      // Update user information if they're already registered with Google
+      if (user.provider === 'google') {
+        user.name = name;
+        user.image = image;
+        user.providerId = providerId;
+        await user.save();
+      }
+      // If user exists but with local auth, don't allow Google login to override
+      else {
+        res.status(400).json({
+          success: false,
+          message: 'An account with this email already exists. Please use email and password to login.'
+        });
+        return;
+      }
+    } else {
+      // Create new user
+      user = await User.create({
+        email,
+        name,
+        provider: 'google',
+        providerId,
+        image,
+        password: undefined // No password for OAuth users
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET as string,
+      { expiresIn: '30d' }
+    );
+
+    res.status(200).json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        provider: user.provider,
+        subscription: user.subscription
+      },
+      token
+    });
+  } catch (error) {
+    console.error('Error during Google authentication:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during Google authentication'
+    });
+  }
+};

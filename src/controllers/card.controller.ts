@@ -23,8 +23,8 @@ export const createCard = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Handle image upload
-    const image = req.file ? `/uploads/cards/${req.file.filename}` : undefined;
+    // Handle image upload (URL injected by S3 middleware)
+    const image = (req as any).uploadedImageUrl || undefined;
 
     const card = await Card.create({
       deck: deckId,
@@ -135,8 +135,8 @@ export const updateCard = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Handle image upload
-    const image = req.file ? `/uploads/cards/${req.file.filename}` : card.image;
+    // Handle image upload (URL injected by S3 middleware)
+    const image = (req as any).uploadedImageUrl || card.image;
 
     card.front = front || card.front;
     card.back = back || card.back;

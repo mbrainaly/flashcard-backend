@@ -3,15 +3,26 @@ import bcrypt from 'bcryptjs';
 
 export interface IUser extends Document {
   email: string;
-  password: string;
+  password?: string; // Optional for OAuth users
   name: string;
+  provider?: string; // OAuth provider (google, github, etc.)
+  providerId?: string; // OAuth provider user ID
+  image?: string; // Profile image URL
   subscription: {
     plan: string;
     status: string;
     currentPeriodEnd?: Date;
     customerId?: string;
     credits: number;
+    usage?: {
+      // counts per current UTC month
+      monthKey: string; // e.g., 2025-09
+      quizzesGenerated: number;
+      notesGenerated: number;
+    };
   };
+  resetPasswordToken?: string | null;
+  resetPasswordExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -34,7 +45,10 @@ const userSchema = new Schema<IUser>(
     },
     password: {
       type: String,
-      required: [true, 'Password is required'],
+      required: function(this: IUser) {
+        // Password is required only for local users (not OAuth users)
+        return !this.provider;
+      },
       minlength: [6, 'Password must be at least 6 characters long'],
       select: false // Don't include password in queries by default
     },
@@ -44,6 +58,19 @@ const userSchema = new Schema<IUser>(
       trim: true,
       minlength: [2, 'Name must be at least 2 characters long'],
       maxlength: [50, 'Name cannot exceed 50 characters']
+    },
+    provider: {
+      type: String,
+      enum: ['google', 'github', 'local'],
+      default: 'local'
+    },
+    providerId: {
+      type: String,
+      sparse: true // Allow multiple null values
+    },
+    image: {
+      type: String,
+      default: null
     },
     subscription: {
       plan: {
@@ -67,8 +94,15 @@ const userSchema = new Schema<IUser>(
       credits: {
         type: Number,
         default: 50
+      },
+      usage: {
+        monthKey: { type: String, default: '' },
+        quizzesGenerated: { type: Number, default: 0 },
+        notesGenerated: { type: Number, default: 0 },
       }
-    }
+    },
+    resetPasswordToken: { type: String, default: null },
+    resetPasswordExpires: { type: Date, default: null }
   },
   {
     timestamps: true,
@@ -77,13 +111,29 @@ const userSchema = new Schema<IUser>(
 
 // Hash password before saving
 userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || !this.password) {
+    console.log('Skipping password hash - no modification or no password');
+    return next();
+  }
 
   try {
+    console.log('Hashing password for user:', {
+      email: this.email,
+      provider: this.provider,
+      passwordBefore: this.password.substring(0, 10) + '...'
+    });
+    
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
+    
+    console.log('Password hashed successfully:', {
+      email: this.email,
+      hashedPasswordLength: this.password.length
+    });
+    
     next();
   } catch (error: any) {
+    console.error('Error hashing password:', error);
     next(error);
   }
 });

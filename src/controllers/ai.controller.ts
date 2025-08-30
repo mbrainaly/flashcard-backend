@@ -5,6 +5,32 @@ import Card from '../models/Card';
 import { initializeCard } from '../utils/spacedRepetition';
 import openai from '../config/openai';
 import openaiClient from '../config/openai';
+import { supadata } from '../config/supadata';
+import User from '../models/User';
+import { PLAN_RULES, currentPeriodKey } from '../utils/plan';
+import { getPlanRulesForId } from '../utils/getPlanRules'
+import { deductCredits, refundCredits } from '../utils/credits';
+import { CREDIT_COSTS } from '../config/credits';
+
+function looksLikeYouTubeUrl(input?: string) {
+  if (!input) return false;
+  return /(youtube\.com\/.+v=|youtu\.be\/)/i.test(input);
+}
+
+async function getTranscriptFromSupadata(urlOrId: string): Promise<string> {
+  try {
+    let resp: any = await supadata.youtube.transcript({ url: urlOrId, text: true });
+    if (!resp && /^[-_a-zA-Z0-9]{11}$/.test(urlOrId)) {
+      resp = await supadata.youtube.transcript({ videoId: urlOrId, text: true });
+    }
+    if (typeof resp === 'string') return resp;
+    if (resp?.content && typeof resp.content === 'string') return resp.content;
+    if (Array.isArray(resp?.segments)) return resp.segments.map((s: any) => s.text).join(' ');
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
 
 // @desc    Generate flashcards for a deck
 // @route   POST /api/ai/flashcards/generate
@@ -25,6 +51,13 @@ export const generateFlashcardsForDeck = async (req: Request, res: Response): Pr
       console.log('Unauthorized access. User:', req.user._id, 'Deck owner:', deck.owner);
       res.status(403).json({ message: 'Not authorized to modify this deck' });
       return;
+    }
+
+    // Charge 1 credit for flashcard generation
+    const charge = await deductCredits(req.user._id, CREDIT_COSTS.flashcardGeneration)
+    if (!charge.ok) {
+      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
+      return
     }
 
     // Generate flashcards using AI
@@ -55,15 +88,10 @@ export const generateFlashcardsForDeck = async (req: Request, res: Response): Pr
     // Update deck card count
     deck.totalCards += cards.length;
     await deck.save();
-    console.log('Updated deck card count');
 
     res.status(201).json(cards);
   } catch (error) {
     console.error('Error generating flashcards:', error);
-    if (error instanceof Error) {
-      console.error('Error details:', error.message);
-      console.error('Error stack:', error.stack);
-    }
     res.status(500).json({ message: 'Error generating flashcards', error: error instanceof Error ? error.message : 'Unknown error' });
   }
 };
@@ -93,6 +121,15 @@ export const analyzeContentForFlashcards = async (req: Request, res: Response): 
 // @access  Private
 export const evaluateAnswer = async (req: Request, res: Response): Promise<void> => {
   try {
+    // Plan gating for AI Study Assistant
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = await getPlanRulesForId(planId)
+    if (!rules.allowAIStudyAssistant) {
+      res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
+      return
+    }
+
     const { cardId, answer, correctAnswer } = req.body;
 
     const prompt = `
@@ -252,10 +289,17 @@ export const analyzeQuizContent = async (req: Request, res: Response): Promise<v
   try {
     const { content } = req.body;
 
+    // If content is a YouTube URL, resolve to transcript via Supadata
+    let resolvedContent = content;
+    if (looksLikeYouTubeUrl(content)) {
+      const t = await getTranscriptFromSupadata(content);
+      if (t) resolvedContent = t;
+    }
+
     const prompt = `
       Analyze the following content for quiz generation:
 
-      ${content}
+      ${resolvedContent}
 
       Provide:
       1. A list of key concepts from the content
@@ -310,32 +354,63 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
   try {
     const { content, numberOfQuestions, difficulty, questionTypes } = req.body;
 
+    // Enforce monthly quiz limit by plan
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = PLAN_RULES[planId]
+    const key = currentPeriodKey()
+    const usage = user?.subscription?.usage || { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
+    const monthUsage = usage.monthKey === key ? usage : { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
+    if (typeof rules.monthlyQuizLimit === 'number' && monthUsage.quizzesGenerated >= rules.monthlyQuizLimit) {
+      res.status(403).json({ success: false, message: 'Monthly quiz generation limit reached for your plan' })
+      return
+    }
+
+    // Charge 2 credits for quiz generation
+    const charge = await deductCredits(req.user._id, CREDIT_COSTS.quizGeneration)
+    if (!charge.ok) {
+      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
+      return
+    }
+
+    // Allow passing a YouTube URL directly
+    let resolvedContent = content;
+    if (looksLikeYouTubeUrl(content)) {
+      const t = await getTranscriptFromSupadata(content);
+      if (t) resolvedContent = t;
+    }
+
     const prompt = `
       Generate a quiz with ${numberOfQuestions} questions based on this content:
 
-      ${content}
+      ${resolvedContent}
 
       Requirements:
-      - Difficulty level: ${difficulty}
-      - Question types: ${questionTypes.join(', ')}
+      - Overall difficulty level: ${difficulty}
+      - Allowed question types: ${questionTypes.join(', ')}
+      - Distribute questions across the allowed types (balanced if multiple)
       - Each question should have:
         * Clear and concise wording
-        * 4 options (1 correct, 3 plausible but incorrect)
         * Brief explanation of the correct answer
+      - Type-specific formatting:
+        * multiple-choice: include "options" (array of 4 strings) and "correctOptionIndex" (0-3)
+        * true-false: set "options" to ["True", "False"] and "correctOptionIndex" (0 for True, 1 for False)
+        * short-answer: include "answer" (string). You may omit "options"; if present, include only the correct answer as the first element
       - Questions should cover different aspects of the content
       - Distribute difficulty evenly
       - Avoid repetitive or overlapping questions
 
-      Format your response as a JSON array of questions with this structure:
+      Format your response strictly as JSON object with this structure:
       {
         "questions": [
           {
             "question": string,
-            "options": string[],
-            "correctOptionIndex": number,
+            "options": string[] | [],
+            "correctOptionIndex": number | null,
+            "answer": string | null,
             "explanation": string,
-            "type": string,
-            "difficulty": string
+            "type": "multiple-choice" | "true-false" | "short-answer",
+            "difficulty": "beginner" | "intermediate" | "advanced"
           }
         ]
       }
@@ -360,8 +435,16 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
       ? JSON.parse(completion.choices[0].message.content) 
       : { error: "No content returned" };
     res.status(200).json(quiz);
+
+    // Increment usage counter after success
+    await User.findByIdAndUpdate(req.user._id, {
+      $set: { 'subscription.usage.monthKey': key },
+      $inc: { 'subscription.usage.quizzesGenerated': 1 },
+    })
   } catch (error) {
     console.error('Error generating quiz:', error);
+    // Attempt to refund 2 credits on failure
+    try { await refundCredits(req.user._id, CREDIT_COSTS.quizGeneration) } catch (_) {}
     res.status(500).json({ message: 'Failed to generate quiz' });
   }
 };
@@ -371,6 +454,15 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
 // @access  Private
 export const answerQuestion = async (req: Request, res: Response): Promise<void> => {
   try {
+    // Plan gating for AI Study Assistant
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = PLAN_RULES[planId]
+    if (!rules.allowAIStudyAssistant) {
+      res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
+      return
+    }
+
     const { question, context } = req.body
 
     if (!question || !context) {
@@ -440,6 +532,15 @@ Example format:
 // @access  Private
 export const explainConcept = async (req: Request, res: Response): Promise<void> => {
   try {
+    // Plan gating for AI Study Assistant
+    const user = await User.findById(req.user._id)
+    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
+    const rules = PLAN_RULES[planId]
+    if (!rules.allowAIStudyAssistant) {
+      res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
+      return
+    }
+
     const { concept, subject } = req.body
 
     if (!concept) {

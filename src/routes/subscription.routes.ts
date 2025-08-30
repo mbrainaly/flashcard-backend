@@ -3,7 +3,8 @@ import { protect } from '../middleware/auth';
 import {
   createCheckoutSession,
   updateSubscription,
-  getSubscription
+  getSubscription,
+  getPlans
 } from '../controllers/subscription.controller';
 
 const router = express.Router();
@@ -13,6 +14,7 @@ router.use(protect);
 
 // Get subscription details
 router.get('/', getSubscription);
+router.get('/plans', getPlans);
 
 // Create checkout session
 router.post('/create-checkout-session', createCheckoutSession);
