@@ -102,4 +102,48 @@ router.post('/homework-help', upload.single('file'), getHomeworkHelp);
 // Document analysis route
 router.post('/analyze-document', upload.single('file'), protect, analyzeDocument)
 
+// PDF processing route with Gemini
+router.post('/process-pdf', upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ message: 'No file uploaded.' });
+    }
+
+    // Check if it's a PDF or supported document type
+    if (!file.mimetype.includes('pdf') && !file.mimetype.includes('document')) {
+      return res.status(400).json({ message: 'Only PDF and document files are supported.' });
+    }
+
+    // Import the PDF processing function
+    const { processPDFWithClaude, generateNotesFromContent } = await import('../utils/ai');
+    
+    let content;
+    if (file.mimetype === 'application/pdf') {
+      // Process PDF directly with Claude Sonnet 4
+      content = await processPDFWithClaude(file.buffer, file.mimetype);
+    } else {
+      // For other document types, you might need additional processing
+      // For now, we'll return an error for unsupported types
+      return res.status(400).json({ message: 'Currently only PDF files are supported for direct processing.' });
+    }
+
+    // Generate structured notes from the extracted content
+    const notes = await generateNotesFromContent(content, req.body.topic);
+
+    res.status(200).json({ 
+      success: true,
+      content: notes,
+      originalContent: content
+    });
+  } catch (error: any) {
+    console.error('Error processing PDF:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to process PDF. Please try again.',
+      error: error.message 
+    });
+  }
+})
+
 export default router; 
