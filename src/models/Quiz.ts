@@ -41,6 +41,8 @@ export interface IQuiz extends Document {
   description: string;
   owner: Schema.Types.ObjectId;
   noteId?: Schema.Types.ObjectId; // Optional reference to a note
+  deckId?: Schema.Types.ObjectId; // Optional reference to a deck
+  type: 'individual' | 'by-notes' | 'by-deck'; // Quiz generation type
   questions: IQuizQuestion[];
   isPublic: boolean;
   tags: string[];
@@ -74,6 +76,16 @@ const quizSchema = new Schema<IQuiz>(
     noteId: {
       type: Schema.Types.ObjectId,
       ref: 'Note',
+    },
+    deckId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Deck',
+    },
+    type: {
+      type: String,
+      enum: ['individual', 'by-notes', 'by-deck'],
+      required: true,
+      default: 'individual',
     },
     questions: [{
       question: {

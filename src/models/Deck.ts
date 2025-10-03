@@ -4,12 +4,17 @@ export interface IDeck extends Document {
   title: string;
   description: string;
   owner: Schema.Types.ObjectId;
+  category: string;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
   isPublic: boolean;
+  isActive: boolean;
   tags: string[];
   createdAt: Date;
   updatedAt: Date;
   lastStudied?: Date;
   totalCards: number;
+  studyCount: number;
+  rating: number;
   studyProgress: {
     mastered: number;
     learning: number;
@@ -36,9 +41,25 @@ const deckSchema = new Schema<IDeck>(
       ref: 'User',
       required: true,
     },
+    category: {
+      type: String,
+      required: [true, 'Category is required'],
+      trim: true,
+      maxlength: [50, 'Category cannot be more than 50 characters'],
+    },
+    difficulty: {
+      type: String,
+      enum: ['beginner', 'intermediate', 'advanced'],
+      default: 'beginner',
+      required: true,
+    },
     isPublic: {
       type: Boolean,
       default: false,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
     tags: [{
       type: String,
@@ -47,6 +68,16 @@ const deckSchema = new Schema<IDeck>(
     totalCards: {
       type: Number,
       default: 0,
+    },
+    studyCount: {
+      type: Number,
+      default: 0,
+    },
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
     },
     studyProgress: {
       mastered: {

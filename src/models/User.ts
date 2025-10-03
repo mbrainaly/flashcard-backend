@@ -8,6 +8,8 @@ export interface IUser extends Document {
   provider?: string; // OAuth provider (google, github, etc.)
   providerId?: string; // OAuth provider user ID
   image?: string; // Profile image URL
+  isActive: boolean; // Account active status
+  lastLogin?: Date; // Last login timestamp
   subscription: {
     plan: string;
     status: string;
@@ -70,6 +72,14 @@ const userSchema = new Schema<IUser>(
     },
     image: {
       type: String,
+      default: null
+    },
+    isActive: {
+      type: Boolean,
+      default: true
+    },
+    lastLogin: {
+      type: Date,
       default: null
     },
     subscription: {

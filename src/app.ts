@@ -9,6 +9,13 @@ import aiRoutes from './routes/ai.routes';
 import notesRoutes from './routes/notes.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import quizRoutes from './routes/quiz.routes';
+import adminAuthRoutes from './routes/admin/admin.auth.routes';
+import adminPagesRoutes from './routes/admin/admin.pages.routes';
+import adminBlogsRoutes from './routes/admin/admin.blogs.routes';
+import adminSubscriptionsRoutes from './routes/admin/admin.subscriptions.routes';
+import adminContentRoutes from './routes/admin/admin.content.routes';
+import adminAnalyticsRoutes from './routes/admin/admin.analytics.routes';
+import adminUsersRoutes from './routes/admin/admin.users.routes';
 
 const app = express();
 
@@ -77,6 +84,15 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Admin routes (must be before other /api routes to avoid conflicts)
+app.use('/api/admin/auth', adminAuthRoutes);
+app.use('/api/admin', adminPagesRoutes);
+app.use('/api/admin', adminBlogsRoutes);
+app.use('/api/admin', adminSubscriptionsRoutes);
+app.use('/api/admin', adminContentRoutes);
+app.use('/api/admin', adminAnalyticsRoutes);
+app.use('/api/admin', adminUsersRoutes);
 
 // Routes
 app.use('/api/auth', authRoutes);
