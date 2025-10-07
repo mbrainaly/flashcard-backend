@@ -15,6 +15,7 @@ import {
   createTag,
   updateTag,
   deleteTag,
+  getBlogOverview,
   getBlogAnalytics
 } from '../../controllers/admin/admin.blogs.controller';
 import { protectAdmin } from '../../middleware/admin.auth.middleware';
@@ -27,6 +28,7 @@ router.use(protectAdmin);
 
 // Blog Management Routes
 router.get('/blogs', requirePermissions(['blogs.read']), getAllBlogs);
+router.get('/blogs/overview', requirePermissions(['blogs.read']), getBlogOverview);
 router.get('/blogs/analytics', requirePermissions(['blogs.read', 'analytics.read']), getBlogAnalytics);
 router.get('/blogs/:id', requirePermissions(['blogs.read']), getBlogById);
 router.post('/blogs', requirePermissions(['blogs.write']), createBlog);

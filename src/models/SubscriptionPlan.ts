@@ -39,7 +39,9 @@ export interface ISubscriptionPlan extends Document {
     availableFrom?: Date;
     availableUntil?: Date;
   };
+  selectedFeatures: string[]; // Array of feature keys from AVAILABLE_FEATURES
   metadata: {
+    stripeProductId?: string;
     stripePriceId?: string;
     paypalPlanId?: string;
     color: string;
@@ -205,7 +207,24 @@ const SubscriptionPlanSchema: Schema = new Schema({
     availableFrom: Date,
     availableUntil: Date
   },
+  selectedFeatures: {
+    type: [String],
+    default: [],
+    validate: {
+      validator: function(features: string[]) {
+        // Import available features for validation
+        const { AVAILABLE_FEATURES } = require('../config/features');
+        const validFeatureKeys = AVAILABLE_FEATURES.map((f: any) => f.key);
+        return features.every(feature => validFeatureKeys.includes(feature));
+      },
+      message: 'Invalid feature key provided'
+    }
+  },
   metadata: {
+    stripeProductId: {
+      type: String,
+      trim: true
+    },
     stripePriceId: {
       type: String,
       trim: true

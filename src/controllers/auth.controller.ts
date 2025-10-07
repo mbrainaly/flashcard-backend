@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import User from '../models/User';
+import SubscriptionPlan from '../models/SubscriptionPlan';
 import { sendMail } from '../config/mail';
 
 // Generate JWT Token
@@ -12,6 +13,30 @@ const generateToken = (id: string): string => {
     process.env.JWT_SECRET as string
   );
   return token;
+};
+
+// Helper function to find the free plan (price = 0)
+const getFreePlan = async () => {
+  try {
+    // Look for a plan with $0 monthly price
+    const freePlan = await SubscriptionPlan.findOne({
+      'price.monthly': 0,
+      'visibility.isActive': true,
+      'visibility.isPublic': true
+    }).lean();
+
+    if (freePlan) {
+      console.log('✅ Assigning free plan to new user:', freePlan.name, '(ID:', freePlan._id.toString() + ')');
+      return freePlan._id.toString();
+    }
+
+    // Fallback to basic plan if no free plan found
+    console.warn('⚠️ No free plan found in database, falling back to basic plan');
+    return 'basic';
+  } catch (error) {
+    console.error('❌ Error finding free plan:', error);
+    return 'basic'; // Fallback to basic plan
+  }
 };
 
 // @desc    Register user
@@ -38,12 +63,21 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Create user
+    // Get the free plan for new users
+    const freePlanId = await getFreePlan();
+
+    // Create user with free plan
     console.log('Creating new user:', { name, email });
     const user = await User.create({
       name,
       email,
       password,
+      subscription: {
+        plan: freePlanId,
+        status: 'active',
+        currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year for free plan
+        interval: 'monthly'
+      }
     });
 
     if (user) {
@@ -457,6 +491,9 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
         return;
       }
     } else {
+      // Get the free plan for new OAuth users
+      const freePlanId = await getFreePlan();
+
       // Create new user
       user = await User.create({
         email,
@@ -464,7 +501,13 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
         provider: 'google',
         providerId,
         image,
-        password: undefined // No password for OAuth users
+        password: undefined, // No password for OAuth users
+        subscription: {
+          plan: freePlanId,
+          status: 'active',
+          currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year for free plan
+          interval: 'monthly'
+        }
       });
     }
 

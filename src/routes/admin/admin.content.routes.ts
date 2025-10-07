@@ -14,6 +14,8 @@ import {
   deleteQuiz,
   getAllNotes,
   getNoteById,
+  updateNote,
+  deleteNote,
   getContentStats
 } from '../../controllers/admin/admin.content.controller';
 import { protectAdmin } from '../../middleware/admin.auth.middleware';
@@ -45,6 +47,8 @@ router.delete('/content/quizzes/:id', requirePermissions(['content.delete']), de
 // Notes Management Routes
 router.get('/content/notes', requirePermissions(['content.read']), getAllNotes);
 router.get('/content/notes/:id', requirePermissions(['content.read']), getNoteById);
+router.put('/content/notes/:id', requirePermissions(['content.write']), updateNote);
+router.delete('/content/notes/:id', requirePermissions(['content.delete']), deleteNote);
 
 // Content Statistics Route
 router.get('/content/stats', requirePermissions(['content.read', 'analytics.read']), getContentStats);

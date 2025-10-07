@@ -14,8 +14,15 @@ export interface IUser extends Document {
     plan: string;
     status: string;
     currentPeriodEnd?: Date;
+    cancelAtPeriodEnd?: boolean;
     customerId?: string;
     credits: number;
+    adminNotes?: {
+      adminId: mongoose.Types.ObjectId;
+      adminName: string;
+      note: string;
+      timestamp: Date;
+    }[];
     usage?: {
       // counts per current UTC month
       monthKey: string; // e.g., 2025-09
@@ -85,17 +92,32 @@ const userSchema = new Schema<IUser>(
     subscription: {
       plan: {
         type: String,
-        default: 'basic',
-        enum: ['basic', 'pro', 'team']
+        required: true, // Make it required since we'll always set it during registration
+        validate: {
+          validator: function(v: string) {
+            // Allow legacy plan names
+            const legacyPlans = ['basic', 'pro', 'team'];
+            if (legacyPlans.includes(v)) {
+              return true;
+            }
+            // Allow MongoDB ObjectId format (24 hex characters)
+            return /^[0-9a-fA-F]{24}$/.test(v);
+          },
+          message: 'Plan must be a valid plan name (basic, pro, team) or a valid ObjectId'
+        }
       },
       status: {
         type: String,
         default: 'active',
-        enum: ['active', 'inactive', 'past_due', 'canceled']
+        enum: ['active', 'cancelled', 'past_due', 'trialing', 'incomplete', 'inactive']
       },
       currentPeriodEnd: {
         type: Date,
         default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+      },
+      cancelAtPeriodEnd: {
+        type: Boolean,
+        default: false
       },
       customerId: {
         type: String,
@@ -103,8 +125,14 @@ const userSchema = new Schema<IUser>(
       },
       credits: {
         type: Number,
-        default: 50
+        default: 0 // Will be calculated dynamically based on plan
       },
+      adminNotes: [{
+        adminId: { type: Schema.Types.ObjectId, ref: 'Admin' },
+        adminName: String,
+        note: String,
+        timestamp: { type: Date, default: Date.now }
+      }],
       usage: {
         monthKey: { type: String, default: '' },
         quizzesGenerated: { type: Number, default: 0 },

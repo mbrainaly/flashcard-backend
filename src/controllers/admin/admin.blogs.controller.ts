@@ -770,6 +770,38 @@ export const deleteTag = async (req: AuthenticatedRequest, res: Response) => {
 
 // Analytics Controller
 
+export const getBlogOverview = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [
+      totalPosts,
+      publishedPosts,
+      draftPosts,
+      totalViews
+    ] = await Promise.all([
+      Blog.countDocuments(),
+      Blog.countDocuments({ status: 'published' }),
+      Blog.countDocuments({ status: 'draft' }),
+      Blog.aggregate([{ $group: { _id: null, totalViews: { $sum: '$views' } } }])
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalPosts,
+        publishedPosts,
+        draftPosts,
+        totalViews: totalViews[0]?.totalViews || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching blog overview:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch blog overview'
+    });
+  }
+};
+
 export const getBlogAnalytics = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { startDate, endDate, blogId } = req.query;

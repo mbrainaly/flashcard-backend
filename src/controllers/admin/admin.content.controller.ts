@@ -896,6 +896,9 @@ export const getAllNotes = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { 
       search, 
+      category,
+      status,
+      author,
       userId,
       dateFrom, 
       dateTo,
@@ -908,16 +911,57 @@ export const getAllNotes = async (req: AuthenticatedRequest, res: Response) => {
     // Build filter
     const filter: any = {};
     if (userId) filter.userId = userId;
+    
+    // Category filter
+    if (category) filter.category = category;
+    
+    // Status filter
+    if (status) {
+      if (status === 'active') {
+        filter.isActive = true;
+      } else if (status === 'inactive') {
+        filter.isActive = false;
+      } else if (status === 'public') {
+        filter.isPublic = true;
+      } else if (status === 'private') {
+        filter.isPublic = false;
+      } else if (status === 'generated') {
+        filter.generatedAt = { $ne: null };
+      }
+    }
+    
+    // Date range filter
     if (dateFrom || dateTo) {
       filter.createdAt = {};
       if (dateFrom) filter.createdAt.$gte = new Date(dateFrom as string);
       if (dateTo) filter.createdAt.$lte = new Date(dateTo as string);
     }
+    
+    // Search filter
     if (search) {
       filter.$or = [
         { title: { $regex: search, $options: 'i' } },
-        { content: { $regex: search, $options: 'i' } }
+        { content: { $regex: search, $options: 'i' } },
+        { summary: { $regex: search, $options: 'i' } },
+        { tags: { $regex: search, $options: 'i' } }
       ];
+    }
+
+    // Handle author search
+    if (author) {
+      const users = await User.find({
+        $or: [
+          { name: { $regex: author, $options: 'i' } },
+          { email: { $regex: author, $options: 'i' } }
+        ]
+      }).select('_id');
+      const userIds = users.map(user => user._id);
+      if (userIds.length > 0) {
+        filter.userId = { $in: userIds };
+      } else {
+        // If no matching users found, set impossible condition
+        filter.userId = new mongoose.Types.ObjectId('000000000000000000000000');
+      }
     }
 
     // Build sort
@@ -934,20 +978,37 @@ export const getAllNotes = async (req: AuthenticatedRequest, res: Response) => {
         .skip(skip)
         .limit(limitNum)
         .populate('userId', 'name email avatar')
-        .select('title content userId createdAt updatedAt') // Limit content for list view
         .lean(),
       Note.countDocuments(filter)
     ]);
 
-    // Truncate content for list view
-    const notesWithTruncatedContent = notes.map(note => ({
-      ...note,
-      content: note.content.length > 200 ? note.content.substring(0, 200) + '...' : note.content
+    // Format notes to match frontend expectations
+    const formattedNotes = notes.map(note => ({
+      _id: note._id,
+      title: note.title,
+      content: note.content.length > 200 ? note.content.substring(0, 200) + '...' : note.content,
+      summary: note.summary || '',
+      author: {
+        name: note.userId?.name || 'Unknown',
+        email: note.userId?.email || 'unknown@example.com'
+      },
+      source: note.source || { type: 'manual', name: 'Manual Entry' },
+      category: note.category || 'General',
+      isActive: note.isActive ?? true,
+      isPublic: note.isPublic ?? false,
+      wordCount: note.wordCount || 0,
+      readingTime: note.readingTime || 1,
+      generatedAt: note.generatedAt,
+      viewCount: note.viewCount || 0,
+      downloadCount: note.downloadCount || 0,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      tags: note.tags || []
     }));
 
     res.json({
       success: true,
-      data: notesWithTruncatedContent,
+      data: formattedNotes,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -984,10 +1045,34 @@ export const getNoteById = async (req: AuthenticatedRequest, res: Response) => {
       .select('title difficulty createdAt')
       .lean();
 
+    // Format note to match frontend expectations
+    const formattedNote = {
+      _id: note._id,
+      title: note.title,
+      content: note.content, // Full content for detail view
+      summary: note.summary || '',
+      author: {
+        name: note.userId?.name || 'Unknown',
+        email: note.userId?.email || 'unknown@example.com'
+      },
+      source: note.source || { type: 'manual', name: 'Manual Entry' },
+      category: note.category || 'General',
+      isActive: note.isActive ?? true,
+      isPublic: note.isPublic ?? false,
+      wordCount: note.wordCount || 0,
+      readingTime: note.readingTime || 1,
+      generatedAt: note.generatedAt,
+      viewCount: note.viewCount || 0,
+      downloadCount: note.downloadCount || 0,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      tags: note.tags || []
+    };
+
     res.json({
       success: true,
       data: {
-        note,
+        note: formattedNote,
         associatedQuizzes
       }
     });
@@ -996,6 +1081,92 @@ export const getNoteById = async (req: AuthenticatedRequest, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch note'
+    });
+  }
+};
+
+export const updateNote = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const note = await Note.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    )
+      .populate('userId', 'name email')
+      .lean();
+
+    if (!note) {
+      return res.status(404).json({
+        success: false,
+        message: 'Note not found'
+      });
+    }
+
+    // Format note to match frontend expectations
+    const formattedNote = {
+      _id: note._id,
+      title: note.title,
+      content: note.content,
+      summary: note.summary || '',
+      author: {
+        name: note.userId?.name || 'Unknown',
+        email: note.userId?.email || 'unknown@example.com'
+      },
+      source: note.source || { type: 'manual', name: 'Manual Entry' },
+      category: note.category || 'General',
+      isActive: note.isActive ?? true,
+      isPublic: note.isPublic ?? false,
+      wordCount: note.wordCount || 0,
+      readingTime: note.readingTime || 1,
+      generatedAt: note.generatedAt,
+      viewCount: note.viewCount || 0,
+      downloadCount: note.downloadCount || 0,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      tags: note.tags || []
+    };
+
+    res.json({
+      success: true,
+      data: formattedNote,
+      message: 'Note updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating note:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update note'
+    });
+  }
+};
+
+export const deleteNote = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const note = await Note.findByIdAndDelete(id);
+    if (!note) {
+      return res.status(404).json({
+        success: false,
+        message: 'Note not found'
+      });
+    }
+
+    // Also delete any associated quizzes
+    await Quiz.deleteMany({ noteId: id });
+
+    res.json({
+      success: true,
+      message: 'Note and associated quizzes deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete note'
     });
   }
 };

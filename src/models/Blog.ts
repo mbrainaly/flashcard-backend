@@ -5,7 +5,7 @@ export interface IBlog extends Document {
   slug: string;
   content: string;
   excerpt: string;
-  status: 'draft' | 'published' | 'archived';
+  status: 'draft' | 'published' | 'scheduled' | 'archived';
   author: {
     adminId: mongoose.Types.ObjectId;
     name: string;
@@ -98,7 +98,7 @@ const BlogSchema: Schema = new Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'published', 'archived'],
+    enum: ['draft', 'published', 'scheduled', 'archived'],
     default: 'draft'
   },
   author: {
