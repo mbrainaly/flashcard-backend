@@ -7,11 +7,10 @@ import Quiz from '../../models/Quiz';
 import Note from '../../models/note.model';
 import Subscription from '../../models/Subscription';
 import Transaction from '../../models/Transaction';
-import { AuthenticatedRequest } from '../../middleware/admin.auth.middleware';
 
 // User Management Controllers
 
-export const createUser = async (req: AuthenticatedRequest, res: Response) => {
+export const createUser = async (req: Request, res: Response) => {
   try {
     const { name, email, password, role = 'basic', isActive = true } = req.body;
 
@@ -82,7 +81,7 @@ export const createUser = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllUsers = async (req: Request, res: Response) => {
   try {
     const { 
       search, 
@@ -239,7 +238,7 @@ export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getUserById = async (req: AuthenticatedRequest, res: Response) => {
+export const getUserById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -322,14 +321,14 @@ export const getUserById = async (req: AuthenticatedRequest, res: Response) => {
         .select('title attempts')
         .lean()
         .then(quizzes => {
-          const attempts = [];
+          const attempts: any[] = [];
           quizzes.forEach(quiz => {
             const userAttempts = quiz.attempts
               .filter(attempt => attempt.userId.toString() === user._id.toString())
               .slice(0, 1);
             userAttempts.forEach(attempt => {
               attempts.push({
-                id: `${quiz._id}-${attempt._id}`,
+                id: `${quiz._id}-${(attempt as any)._id}`,
                 type: 'study',
                 description: `Completed study session for "${quiz.title}"`,
                 timestamp: attempt.completedAt
@@ -354,7 +353,7 @@ export const getUserById = async (req: AuthenticatedRequest, res: Response) => {
       lastLogin: user.lastLogin,
       createdAt: user.createdAt,
       subscription: activeSubscription ? {
-        plan: activeSubscription.planId?.name || user.subscription?.plan || 'Basic',
+        plan: (activeSubscription.planId as any)?.name || user.subscription?.plan || 'Basic',
         status: activeSubscription.status,
         expiresAt: activeSubscription.billing?.nextBillingDate,
         startedAt: activeSubscription.createdAt
@@ -383,7 +382,7 @@ export const getUserById = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
+export const updateUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
@@ -460,7 +459,7 @@ export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { deleteContent = false } = req.body;
@@ -532,7 +531,7 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getUserActivity = async (req: AuthenticatedRequest, res: Response) => {
+export const getUserActivity = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { page = 1, limit = 20, type, search, dateFrom, dateTo } = req.query;
@@ -601,7 +600,7 @@ export const getUserActivity = async (req: AuthenticatedRequest, res: Response) 
           .slice(0, 10)
           .forEach(attempt => {
             activities.push({
-              id: `study-${quiz._id}-${attempt._id}`,
+              id: `study-${quiz._id}-${(attempt as any)._id}`,
               type: 'study',
               title: 'Study Session Completed',
               description: `Completed study session for "${quiz.title}"`,
@@ -643,10 +642,10 @@ export const getUserActivity = async (req: AuthenticatedRequest, res: Response) 
           id: `subscription-${subscription._id}`,
           type: 'subscription',
           title: 'Subscription Updated',
-          description: `Subscribed to ${subscription.planId?.name || 'Premium'} plan`,
+          description: `Subscribed to ${(subscription.planId as any)?.name || 'Premium'} plan`,
           timestamp: subscription.createdAt,
           metadata: {
-            subscriptionPlan: subscription.planId?.name || 'Premium'
+            subscriptionPlan: (subscription.planId as any)?.name || 'Premium'
           }
         });
 
@@ -655,10 +654,10 @@ export const getUserActivity = async (req: AuthenticatedRequest, res: Response) 
             id: `subscription-cancel-${subscription._id}`,
             type: 'subscription',
             title: 'Subscription Cancelled',
-            description: `Cancelled ${subscription.planId?.name || 'Premium'} subscription`,
+            description: `Cancelled ${(subscription.planId as any)?.name || 'Premium'} subscription`,
             timestamp: subscription.cancelledAt,
             metadata: {
-              subscriptionPlan: subscription.planId?.name || 'Premium'
+              subscriptionPlan: (subscription.planId as any)?.name || 'Premium'
             }
           });
         }
@@ -702,7 +701,7 @@ export const getUserActivity = async (req: AuthenticatedRequest, res: Response) 
   }
 };
 
-export const getUserSubscription = async (req: AuthenticatedRequest, res: Response) => {
+export const getUserSubscription = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -772,7 +771,7 @@ export const getUserSubscription = async (req: AuthenticatedRequest, res: Respon
   }
 };
 
-export const updateUserSubscription = async (req: AuthenticatedRequest, res: Response) => {
+export const updateUserSubscription = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { action, planId, reason } = req.body;
@@ -905,7 +904,7 @@ export const updateUserSubscription = async (req: AuthenticatedRequest, res: Res
   }
 };
 
-export const getUserStats = async (req: AuthenticatedRequest, res: Response) => {
+export const getUserStats = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { period = '30d' } = req.query;

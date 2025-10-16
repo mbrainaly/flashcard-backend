@@ -5,11 +5,10 @@ import Card from '../../models/Card';
 import Quiz from '../../models/Quiz';
 import Note from '../../models/note.model';
 import User from '../../models/User';
-import { AuthenticatedRequest } from '../../middleware/admin.auth.middleware';
 
 // Deck Management Controllers
 
-export const getAllDecks = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllDecks = async (req: Request, res: Response) => {
   try {
     const { 
       search, 
@@ -98,8 +97,8 @@ export const getAllDecks = async (req: AuthenticatedRequest, res: Response) => {
       title: deck.title,
       description: deck.description,
       author: {
-        name: deck.owner?.name || 'Unknown',
-        email: deck.owner?.email || 'unknown@example.com'
+        name: (deck.owner as any)?.name || 'Unknown',
+        email: (deck.owner as any)?.email || 'unknown@example.com'
       },
       category: deck.category || 'Uncategorized',
       difficulty: deck.difficulty || 'beginner',
@@ -132,7 +131,7 @@ export const getAllDecks = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getDeckById = async (req: AuthenticatedRequest, res: Response) => {
+export const getDeckById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -192,7 +191,7 @@ export const getDeckById = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateDeck = async (req: AuthenticatedRequest, res: Response) => {
+export const updateDeck = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -226,7 +225,7 @@ export const updateDeck = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteDeck = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteDeck = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -260,7 +259,7 @@ export const deleteDeck = async (req: AuthenticatedRequest, res: Response) => {
 
 // Card Management Controllers
 
-export const getAllCards = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllCards = async (req: Request, res: Response) => {
   try {
     const { 
       search, 
@@ -359,12 +358,12 @@ export const getAllCards = async (req: AuthenticatedRequest, res: Response) => {
         front: card.front,
         back: card.back,
         deck: {
-          _id: card.deck._id,
-          title: card.deck.title
+          _id: (card.deck as any)._id,
+          title: (card.deck as any).title
         },
         author: {
-          name: card.createdBy?.name || 'Unknown',
-          email: card.createdBy?.email || 'unknown@example.com'
+          name: (card.createdBy as any)?.name || 'Unknown',
+          email: (card.createdBy as any)?.email || 'unknown@example.com'
         },
         difficulty,
         isActive,
@@ -427,7 +426,7 @@ export const getAllCards = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getCardById = async (req: AuthenticatedRequest, res: Response) => {
+export const getCardById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -511,7 +510,7 @@ export const getCardById = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateCard = async (req: AuthenticatedRequest, res: Response) => {
+export const updateCard = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -546,7 +545,7 @@ export const updateCard = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteCard = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteCard = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -579,7 +578,7 @@ export const deleteCard = async (req: AuthenticatedRequest, res: Response) => {
 
 // Quiz Management Controllers
 
-export const getAllQuizzes = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllQuizzes = async (req: Request, res: Response) => {
   try {
     const { 
       search, 
@@ -611,7 +610,7 @@ export const getAllQuizzes = async (req: AuthenticatedRequest, res: Response) =>
         'medium': 'intermediate', 
         'hard': 'advanced'
       };
-      filter.difficulty = difficultyMap[difficulty] || difficulty;
+      filter.difficulty = difficultyMap[difficulty as string] || difficulty;
     }
     
     // Filter by quiz type
@@ -725,13 +724,13 @@ export const getAllQuizzes = async (req: AuthenticatedRequest, res: Response) =>
       let deckInfo = { _id: 'no-deck', title: 'No Associated Deck' };
       if (quiz.type === 'by-notes' && quiz.noteId) {
         deckInfo = {
-          _id: quiz.noteId._id,
-          title: quiz.noteId.title || 'Associated Note'
+          _id: (quiz.noteId as any)?._id,
+          title: (quiz.noteId as any)?.title || 'Associated Note'
         };
       } else if (quiz.type === 'by-deck' && quiz.deckId) {
         deckInfo = {
-          _id: quiz.deckId._id,
-          title: quiz.deckId.title || 'Associated Deck'
+          _id: (quiz.deckId as any)?._id,
+          title: (quiz.deckId as any)?.title || 'Associated Deck'
         };
       }
 
@@ -745,8 +744,8 @@ export const getAllQuizzes = async (req: AuthenticatedRequest, res: Response) =>
         type: quizType, // Quiz generation type
         deck: deckInfo,
         author: {
-          name: quiz.owner?.name || 'Unknown',
-          email: quiz.owner?.email || 'unknown@example.com'
+          name: (quiz.owner as any)?.name || 'Unknown',
+          email: (quiz.owner as any)?.email || 'unknown@example.com'
         },
         difficulty: difficultyMap[quiz.difficulty] || 'medium',
         isActive: quiz.updatedAt > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Active if updated in last 30 days
@@ -783,7 +782,7 @@ export const getAllQuizzes = async (req: AuthenticatedRequest, res: Response) =>
   }
 };
 
-export const getQuizById = async (req: AuthenticatedRequest, res: Response) => {
+export const getQuizById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -830,7 +829,7 @@ export const getQuizById = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateQuiz = async (req: AuthenticatedRequest, res: Response) => {
+export const updateQuiz = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -865,7 +864,7 @@ export const updateQuiz = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteQuiz = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteQuiz = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -892,7 +891,7 @@ export const deleteQuiz = async (req: AuthenticatedRequest, res: Response) => {
 
 // Notes Management Controllers
 
-export const getAllNotes = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllNotes = async (req: Request, res: Response) => {
   try {
     const { 
       search, 
@@ -989,8 +988,8 @@ export const getAllNotes = async (req: AuthenticatedRequest, res: Response) => {
       content: note.content.length > 200 ? note.content.substring(0, 200) + '...' : note.content,
       summary: note.summary || '',
       author: {
-        name: note.userId?.name || 'Unknown',
-        email: note.userId?.email || 'unknown@example.com'
+        name: (note.userId as any)?.name || 'Unknown',
+        email: (note.userId as any)?.email || 'unknown@example.com'
       },
       source: note.source || { type: 'manual', name: 'Manual Entry' },
       category: note.category || 'General',
@@ -1025,7 +1024,7 @@ export const getAllNotes = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getNoteById = async (req: AuthenticatedRequest, res: Response) => {
+export const getNoteById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -1052,8 +1051,8 @@ export const getNoteById = async (req: AuthenticatedRequest, res: Response) => {
       content: note.content, // Full content for detail view
       summary: note.summary || '',
       author: {
-        name: note.userId?.name || 'Unknown',
-        email: note.userId?.email || 'unknown@example.com'
+        name: (note.userId as any)?.name || 'Unknown',
+        email: (note.userId as any)?.email || 'unknown@example.com'
       },
       source: note.source || { type: 'manual', name: 'Manual Entry' },
       category: note.category || 'General',
@@ -1085,7 +1084,7 @@ export const getNoteById = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateNote = async (req: AuthenticatedRequest, res: Response) => {
+export const updateNote = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -1112,8 +1111,8 @@ export const updateNote = async (req: AuthenticatedRequest, res: Response) => {
       content: note.content,
       summary: note.summary || '',
       author: {
-        name: note.userId?.name || 'Unknown',
-        email: note.userId?.email || 'unknown@example.com'
+        name: (note.userId as any)?.name || 'Unknown',
+        email: (note.userId as any)?.email || 'unknown@example.com'
       },
       source: note.source || { type: 'manual', name: 'Manual Entry' },
       category: note.category || 'General',
@@ -1143,7 +1142,7 @@ export const updateNote = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteNote = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteNote = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -1173,7 +1172,7 @@ export const deleteNote = async (req: AuthenticatedRequest, res: Response) => {
 
 // Content Statistics Controller
 
-export const getContentStats = async (req: AuthenticatedRequest, res: Response) => {
+export const getContentStats = async (req: Request, res: Response) => {
   try {
     const { startDate, endDate } = req.query;
 

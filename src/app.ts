@@ -9,6 +9,10 @@ import aiRoutes from './routes/ai.routes';
 import notesRoutes from './routes/notes.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import quizRoutes from './routes/quiz.routes';
+import studySessionRoutes from './routes/studySession.routes';
+import userCreditsRoutes from './routes/userCredits.routes';
+import blogRoutes from './routes/blog.routes';
+import pagesRoutes from './routes/pages.routes';
 import adminAuthRoutes from './routes/admin/admin.auth.routes';
 import adminPagesRoutes from './routes/admin/admin.pages.routes';
 import adminBlogsRoutes from './routes/admin/admin.blogs.routes';
@@ -16,6 +20,7 @@ import adminSubscriptionsRoutes from './routes/admin/admin.subscriptions.routes'
 import adminContentRoutes from './routes/admin/admin.content.routes';
 import adminAnalyticsRoutes from './routes/admin/admin.analytics.routes';
 import adminUsersRoutes from './routes/admin/admin.users.routes';
+import adminSettingsRoutes from './routes/admin/admin.settings.routes';
 
 const app = express();
 
@@ -87,6 +92,7 @@ app.use((req, res, next) => {
 
 // Admin routes (must be before other /api routes to avoid conflicts)
 app.use('/api/admin/auth', adminAuthRoutes);
+app.use('/api/admin', adminSettingsRoutes); // Move settings first to avoid middleware conflicts
 app.use('/api/admin', adminPagesRoutes);
 app.use('/api/admin', adminBlogsRoutes);
 app.use('/api/admin', adminSubscriptionsRoutes);
@@ -94,14 +100,32 @@ app.use('/api/admin', adminContentRoutes);
 app.use('/api/admin', adminAnalyticsRoutes);
 app.use('/api/admin', adminUsersRoutes);
 
+// Serve uploaded files
+app.use('/uploads', express.static('uploads'));
+
+// Public SEO route (outside admin namespace to avoid middleware conflicts)
+app.get('/api/seo', async (req, res) => {
+  try {
+    const { getPublicSeoSettings } = await import('./controllers/admin/admin.settings.controller');
+    await getPublicSeoSettings(req, res);
+  } catch (error) {
+    console.error('Error in public SEO route:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/decks', deckRoutes);
-app.use('/api', cardRoutes);
+app.use('/api/cards', cardRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/quizzes', quizRoutes);
+app.use('/api/study-sessions', studySessionRoutes);
+app.use('/api/user', userCreditsRoutes);
+app.use('/api/blog', blogRoutes);
+app.use('/api/pages', pagesRoutes);
 
 // Health check endpoint for Vercel
 app.get('/api/health', (req, res) => {

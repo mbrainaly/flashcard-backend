@@ -9,12 +9,14 @@ import {
 
 const router = express.Router();
 
-// All routes are protected and require authentication
+// Public routes (no authentication required)
+router.get('/plans', getPlans);
+
+// Protected routes (require authentication)
 router.use(protect);
 
 // Get subscription details
 router.get('/', getSubscription);
-router.get('/plans', getPlans);
 
 // Create checkout session
 router.post('/create-checkout-session', createCheckoutSession);

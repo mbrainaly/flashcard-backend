@@ -12,6 +12,10 @@ declare global {
   }
 }
 
+export interface AuthenticatedRequest extends Request {
+  admin?: any;
+}
+
 interface JwtPayload {
   adminId: string;
   type: string;

@@ -102,8 +102,8 @@ router.post('/homework-help', upload.single('file'), getHomeworkHelp);
 // Document analysis route
 router.post('/analyze-document', upload.single('file'), protect, analyzeDocument)
 
-// PDF processing route with Gemini
-router.post('/process-pdf', upload.single('file'), async (req, res) => {
+// PDF processing route with authentication and credit deduction
+router.post('/process-pdf', protect, upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
     if (!file) {
@@ -115,8 +115,22 @@ router.post('/process-pdf', upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: 'Only PDF and document files are supported.' });
     }
 
-    // Import the PDF processing function
+    // Import required functions
     const { processPDFWithClaude, generateNotesFromContent } = await import('../utils/ai');
+    const { deductFeatureCredits, refundFeatureCredits } = await import('../utils/dynamicCredits');
+    const { CREDIT_COSTS } = await import('../config/credits');
+
+    // Deduct credits for AI notes generation
+    console.log('About to deduct AI notes credits for PDF processing...');
+    const creditResult = await deductFeatureCredits(req.user._id, 'aiNotes', CREDIT_COSTS.notesAnalysis);
+    if (!creditResult.success) {
+      console.log('AI notes credit deduction failed:', creditResult.message);
+      return res.status(403).json({ 
+        success: false, 
+        message: creditResult.message || 'Insufficient AI notes credits. Please upgrade your plan.' 
+      });
+    }
+    console.log('AI notes credit deduction successful. Remaining:', creditResult.remaining);
     
     let content;
     if (file.mimetype === 'application/pdf') {
@@ -138,6 +152,17 @@ router.post('/process-pdf', upload.single('file'), async (req, res) => {
     });
   } catch (error: any) {
     console.error('Error processing PDF:', error);
+    
+    // Refund credits if processing failed
+    try {
+      const { refundFeatureCredits } = await import('../utils/dynamicCredits');
+      const { CREDIT_COSTS } = await import('../config/credits');
+      await refundFeatureCredits(req.user._id, 'aiNotes', CREDIT_COSTS.notesAnalysis);
+      console.log('AI notes credits refunded due to PDF processing failure');
+    } catch (refundError) {
+      console.error('Failed to refund AI notes credits:', refundError);
+    }
+    
     res.status(500).json({ 
       success: false, 
       message: 'Failed to process PDF. Please try again.',

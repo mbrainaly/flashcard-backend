@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Card from '../models/Card';
 import Deck from '../models/Deck';
 import { calculateNextReview, initializeCard, isDue } from '../utils/spacedRepetition';
+import { checkCardLimit } from '../utils/planLimits';
 
 // @desc    Create a new card
 // @route   POST /api/decks/:deckId/cards
@@ -20,6 +21,17 @@ export const createCard = async (req: Request, res: Response): Promise<void> => 
 
     if (deck.owner.toString() !== req.user._id.toString()) {
       res.status(403).json({ message: 'Not authorized to add cards to this deck' });
+      return;
+    }
+
+    // Check user's card limit for this deck
+    const cardLimitCheck = await checkCardLimit(req.user._id, deckId);
+    if (!cardLimitCheck.allowed) {
+      res.status(403).json({ 
+        message: cardLimitCheck.message,
+        currentCount: cardLimitCheck.currentCount,
+        maxAllowed: cardLimitCheck.maxAllowed === Infinity ? 'unlimited' : cardLimitCheck.maxAllowed
+      });
       return;
     }
 

@@ -138,7 +138,7 @@ BlogCategorySchema.pre('save', function(next) {
 
 // Prevent circular references in parent-child relationships
 BlogCategorySchema.pre('save', async function(next) {
-  if (this.parentCategory && this.parentCategory.toString() === this._id.toString()) {
+  if (this.parentCategory && this.parentCategory.toString() === (this._id as any).toString()) {
     const error = new Error('A category cannot be its own parent');
     return next(error);
   }

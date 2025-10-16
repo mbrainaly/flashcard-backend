@@ -1,5 +1,7 @@
 import express from 'express';
+import multer from 'multer';
 import {
+  getPagesOverview,
   getAllPages,
   getPageById,
   updatePage,
@@ -14,10 +16,26 @@ import {
   getContactSubmission,
   updateContactSubmission,
   replyToContactSubmission,
-  addNoteToContactSubmission
+  addNoteToContactSubmission,
+  uploadPageImage
 } from '../../controllers/admin/admin.pages.controller';
 import { protectAdmin } from '../../middleware/admin.auth.middleware';
 import { requirePermissions } from '../../middleware/admin.permissions.middleware';
+
+// Configure multer for image uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  },
+});
 
 const router = express.Router();
 
@@ -25,11 +43,13 @@ const router = express.Router();
 router.use(protectAdmin);
 
 // Page Management Routes
+router.get('/pages/overview', requirePermissions(['pages.read']), getPagesOverview);
 router.get('/pages', requirePermissions(['pages.read']), getAllPages);
 router.get('/pages/:slug', requirePermissions(['pages.read']), getPageById);
 router.put('/pages/:slug', requirePermissions(['pages.write']), updatePage);
 router.get('/pages/:slug/analytics', requirePermissions(['pages.read', 'analytics.read']), getPageAnalytics);
 router.put('/pages/:slug/seo', requirePermissions(['pages.write']), updatePageSEO);
+router.post('/pages/upload-image', requirePermissions(['pages.write']), upload.single('image'), uploadPageImage);
 
 // SEO Management Routes
 router.get('/seo/global', requirePermissions(['pages.read']), getGlobalSEO);

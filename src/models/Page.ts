@@ -24,6 +24,7 @@ export interface IPage extends Document {
     id: string;
     title: string;
     content: string;
+    image?: string;
     order: number;
   }[];
   teamMembers?: {
@@ -71,7 +72,11 @@ export interface IPage extends Document {
     founded: string;
     mission: string;
     vision: string;
-    values: string[];
+    values: Array<{
+      name: string;
+      icon: string;
+      description: string;
+    }>;
   };
   formSettings?: {
     enabled: boolean;
@@ -155,6 +160,7 @@ const PageSchema: Schema = new Schema({
     id: String,
     title: String,
     content: String,
+    image: String,
     order: Number
   }],
   teamMembers: [{
@@ -203,7 +209,11 @@ const PageSchema: Schema = new Schema({
     founded: String,
     mission: String,
     vision: String,
-    values: [String]
+    values: [{
+      name: String,
+      icon: String,
+      description: String
+    }]
   },
   formSettings: {
     enabled: {

@@ -68,7 +68,7 @@ router.route('/decks/:deckId/cards')
 router.get('/decks/:deckId/cards/due', getDueCards);
 
 // Routes for individual cards
-router.route('/cards/:id')
+router.route('/:id')
   .put(upload.single('image'), async (req, res, next) => {
     try {
       if (req.file) {
@@ -92,6 +92,6 @@ router.route('/cards/:id')
   }, updateCard)
   .delete(deleteCard);
 
-router.post('/cards/:id/review', reviewCard);
+router.post('/:id/review', reviewCard);
 
 export default router; 

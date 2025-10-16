@@ -2,11 +2,54 @@ import { Request, Response } from 'express';
 import Page from '../../models/Page';
 import SEOSettings from '../../models/SEOSettings';
 import ContactSubmission from '../../models/ContactSubmission';
-import { AuthenticatedRequest } from '../../middleware/admin.auth.middleware';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import path from 'path';
+
+// S3 Client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
 
 // Page Management Controllers
 
-export const getAllPages = async (req: AuthenticatedRequest, res: Response) => {
+export const getPagesOverview = async (req: Request, res: Response) => {
+  try {
+    const [totalPages, publishedPages, draftPages, reviewPages, totalViews] = await Promise.all([
+      Page.countDocuments(),
+      Page.countDocuments({ status: 'published' }),
+      Page.countDocuments({ status: 'draft' }),
+      Page.countDocuments({ status: 'review' }),
+      Page.aggregate([
+        { $group: { _id: null, totalViews: { $sum: '$views' } } }
+      ])
+    ]);
+
+    const overview = {
+      totalPages,
+      publishedPages,
+      draftPages,
+      reviewPages,
+      totalViews: totalViews[0]?.totalViews || 0
+    };
+
+    res.json({
+      success: true,
+      data: overview
+    });
+  } catch (error) {
+    console.error('Error fetching pages overview:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pages overview'
+    });
+  }
+};
+
+export const getAllPages = async (req: Request, res: Response) => {
   try {
     const { status, search, sortBy = 'lastModified', sortOrder = 'desc' } = req.query;
 
@@ -46,7 +89,7 @@ export const getAllPages = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getPageById = async (req: AuthenticatedRequest, res: Response) => {
+export const getPageById = async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -72,7 +115,7 @@ export const getPageById = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updatePage = async (req: AuthenticatedRequest, res: Response) => {
+export const updatePage = async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
     const updateData = req.body;
@@ -92,6 +135,8 @@ export const updatePage = async (req: AuthenticatedRequest, res: Response) => {
       email: admin.email
     };
     updateData.lastModified = new Date();
+
+    console.log('Received updateData.sections:', JSON.stringify(updateData.sections, null, 2));
 
     const page = await Page.findOneAndUpdate(
       { slug },
@@ -120,7 +165,7 @@ export const updatePage = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getPageAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+export const getPageAnalytics = async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
     const { startDate, endDate } = req.query;
@@ -165,7 +210,7 @@ export const getPageAnalytics = async (req: AuthenticatedRequest, res: Response)
   }
 };
 
-export const updatePageSEO = async (req: AuthenticatedRequest, res: Response) => {
+export const updatePageSEO = async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
     const { seo } = req.body;
@@ -215,7 +260,7 @@ export const updatePageSEO = async (req: AuthenticatedRequest, res: Response) =>
 
 // SEO Management Controllers
 
-export const getGlobalSEO = async (req: AuthenticatedRequest, res: Response) => {
+export const getGlobalSEO = async (req: Request, res: Response) => {
   try {
     let seoSettings = await SEOSettings.findOne().lean();
 
@@ -235,7 +280,7 @@ export const getGlobalSEO = async (req: AuthenticatedRequest, res: Response) => 
         }
       });
 
-      seoSettings = await defaultSettings.save();
+      seoSettings = await defaultSettings.save() as any;
     }
 
     res.json({
@@ -251,7 +296,7 @@ export const getGlobalSEO = async (req: AuthenticatedRequest, res: Response) => 
   }
 };
 
-export const updateGlobalSEO = async (req: AuthenticatedRequest, res: Response) => {
+export const updateGlobalSEO = async (req: Request, res: Response) => {
   try {
     const updateData = req.body;
     const admin = req.admin;
@@ -289,7 +334,7 @@ export const updateGlobalSEO = async (req: AuthenticatedRequest, res: Response) 
   }
 };
 
-export const generateSitemap = async (req: AuthenticatedRequest, res: Response) => {
+export const generateSitemap = async (req: Request, res: Response) => {
   try {
     // Get all published pages
     const pages = await Page.find({ status: 'published' })
@@ -358,7 +403,7 @@ export const generateSitemap = async (req: AuthenticatedRequest, res: Response) 
   }
 };
 
-export const updateRobotsTxt = async (req: AuthenticatedRequest, res: Response) => {
+export const updateRobotsTxt = async (req: Request, res: Response) => {
   try {
     const { robotsTxt } = req.body;
     const admin = req.admin;
@@ -399,7 +444,7 @@ export const updateRobotsTxt = async (req: AuthenticatedRequest, res: Response) 
 
 // Contact Management Controllers
 
-export const getContactSubmissions = async (req: AuthenticatedRequest, res: Response) => {
+export const getContactSubmissions = async (req: Request, res: Response) => {
   try {
     const { 
       status, 
@@ -463,7 +508,7 @@ export const getContactSubmissions = async (req: AuthenticatedRequest, res: Resp
   }
 };
 
-export const updateContactSettings = async (req: AuthenticatedRequest, res: Response) => {
+export const updateContactSettings = async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
     const { formSettings } = req.body;
@@ -514,7 +559,7 @@ export const updateContactSettings = async (req: AuthenticatedRequest, res: Resp
 
 // Contact Submission Management
 
-export const getContactSubmission = async (req: AuthenticatedRequest, res: Response) => {
+export const getContactSubmission = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -549,7 +594,7 @@ export const getContactSubmission = async (req: AuthenticatedRequest, res: Respo
   }
 };
 
-export const updateContactSubmission = async (req: AuthenticatedRequest, res: Response) => {
+export const updateContactSubmission = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -581,7 +626,7 @@ export const updateContactSubmission = async (req: AuthenticatedRequest, res: Re
   }
 };
 
-export const replyToContactSubmission = async (req: AuthenticatedRequest, res: Response) => {
+export const replyToContactSubmission = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { message } = req.body;
@@ -634,7 +679,7 @@ export const replyToContactSubmission = async (req: AuthenticatedRequest, res: R
   }
 };
 
-export const addNoteToContactSubmission = async (req: AuthenticatedRequest, res: Response) => {
+export const addNoteToContactSubmission = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { note } = req.body;
@@ -679,6 +724,49 @@ export const addNoteToContactSubmission = async (req: AuthenticatedRequest, res:
     res.status(500).json({
       success: false,
       message: 'Failed to add note'
+    });
+  }
+};
+
+// Image Upload Controller
+export const uploadPageImage = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file provided'
+      });
+    }
+
+    const file = req.file;
+    const bucket = process.env.AWS_S3_BUCKET as string;
+    const key = `uploads/page-images/${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
+
+    // Upload to S3
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+      ACL: 'public-read',
+    }));
+
+    // Construct the public URL
+    const imageUrl = `https://${bucket}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+
+    res.json({
+      success: true,
+      data: {
+        url: imageUrl,
+        key: key
+      },
+      message: 'Image uploaded successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading page image:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload image'
     });
   }
 };

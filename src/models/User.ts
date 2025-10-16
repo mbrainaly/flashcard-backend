@@ -16,7 +16,13 @@ export interface IUser extends Document {
     currentPeriodEnd?: Date;
     cancelAtPeriodEnd?: boolean;
     customerId?: string;
-    credits: number;
+    credits: {
+      // Feature-specific credit usage (deducted from plan limits)
+      aiFlashcards: number; // Used credits
+      aiQuizzes: number; // Used credits  
+      aiNotes: number; // Used credits
+      aiAssistant: number; // Used credits
+    };
     adminNotes?: {
       adminId: mongoose.Types.ObjectId;
       adminName: string;
@@ -124,8 +130,11 @@ const userSchema = new Schema<IUser>(
         default: null
       },
       credits: {
-        type: Number,
-        default: 0 // Will be calculated dynamically based on plan
+        // Feature-specific credit usage tracking
+        aiFlashcards: { type: Number, default: 0 },
+        aiQuizzes: { type: Number, default: 0 },
+        aiNotes: { type: Number, default: 0 },
+        aiAssistant: { type: Number, default: 0 }
       },
       adminNotes: [{
         adminId: { type: Schema.Types.ObjectId, ref: 'Admin' },

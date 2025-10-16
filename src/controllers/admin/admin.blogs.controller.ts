@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import path from 'path';
 import Blog from '../../models/Blog';
 import BlogCategory from '../../models/BlogCategory';
 import BlogTag from '../../models/BlogTag';
-import { AuthenticatedRequest } from '../../middleware/admin.auth.middleware';
+import s3Client from '../../config/s3';
 
 // Blog Management Controllers
 
-export const getAllBlogs = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllBlogs = async (req: Request, res: Response) => {
   try {
     const { 
       status, 
@@ -73,7 +75,7 @@ export const getAllBlogs = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getBlogById = async (req: AuthenticatedRequest, res: Response) => {
+export const getBlogById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -103,7 +105,7 @@ export const getBlogById = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const createBlog = async (req: AuthenticatedRequest, res: Response) => {
+export const createBlog = async (req: Request, res: Response) => {
   try {
     const blogData = req.body;
     const admin = req.admin;
@@ -177,7 +179,7 @@ export const createBlog = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateBlog = async (req: AuthenticatedRequest, res: Response) => {
+export const updateBlog = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -240,7 +242,7 @@ export const updateBlog = async (req: AuthenticatedRequest, res: Response) => {
 
     // Increment count for added categories
     const addedCategories = newCategories.filter(
-      cat => !oldCategories.map(c => c.toString()).includes(cat)
+      (cat: any) => !oldCategories.map(c => c.toString()).includes(cat)
     );
     if (addedCategories.length > 0) {
       await BlogCategory.updateMany(
@@ -266,7 +268,7 @@ export const updateBlog = async (req: AuthenticatedRequest, res: Response) => {
 
     // Increment count for added tags
     const addedTags = newTags.filter(
-      tag => !oldTags.map(t => t.toString()).includes(tag)
+      (tag: any) => !oldTags.map(t => t.toString()).includes(tag)
     );
     if (addedTags.length > 0) {
       await BlogTag.updateMany(
@@ -298,7 +300,7 @@ export const updateBlog = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteBlog = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteBlog = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -340,7 +342,7 @@ export const deleteBlog = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const publishBlog = async (req: AuthenticatedRequest, res: Response) => {
+export const publishBlog = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -377,7 +379,7 @@ export const publishBlog = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const unpublishBlog = async (req: AuthenticatedRequest, res: Response) => {
+export const unpublishBlog = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -416,7 +418,7 @@ export const unpublishBlog = async (req: AuthenticatedRequest, res: Response) =>
 
 // Category Management Controllers
 
-export const getBlogCategories = async (req: AuthenticatedRequest, res: Response) => {
+export const getBlogCategories = async (req: Request, res: Response) => {
   try {
     const { search, isActive, page = 1, limit = 50 } = req.query;
 
@@ -463,7 +465,7 @@ export const getBlogCategories = async (req: AuthenticatedRequest, res: Response
   }
 };
 
-export const createCategory = async (req: AuthenticatedRequest, res: Response) => {
+export const createCategory = async (req: Request, res: Response) => {
   try {
     const categoryData = req.body;
     const admin = req.admin;
@@ -508,7 +510,7 @@ export const createCategory = async (req: AuthenticatedRequest, res: Response) =
   }
 };
 
-export const updateCategory = async (req: AuthenticatedRequest, res: Response) => {
+export const updateCategory = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -556,7 +558,7 @@ export const updateCategory = async (req: AuthenticatedRequest, res: Response) =
   }
 };
 
-export const deleteCategory = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteCategory = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -601,7 +603,7 @@ export const deleteCategory = async (req: AuthenticatedRequest, res: Response) =
 
 // Tag Management Controllers
 
-export const getBlogTags = async (req: AuthenticatedRequest, res: Response) => {
+export const getBlogTags = async (req: Request, res: Response) => {
   try {
     const { search, isActive, page = 1, limit = 50 } = req.query;
 
@@ -647,7 +649,7 @@ export const getBlogTags = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const createTag = async (req: AuthenticatedRequest, res: Response) => {
+export const createTag = async (req: Request, res: Response) => {
   try {
     const tagData = req.body;
     const admin = req.admin;
@@ -688,7 +690,7 @@ export const createTag = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateTag = async (req: AuthenticatedRequest, res: Response) => {
+export const updateTag = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -734,7 +736,7 @@ export const updateTag = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteTag = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteTag = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -770,7 +772,7 @@ export const deleteTag = async (req: AuthenticatedRequest, res: Response) => {
 
 // Analytics Controller
 
-export const getBlogOverview = async (req: AuthenticatedRequest, res: Response) => {
+export const getBlogOverview = async (req: Request, res: Response) => {
   try {
     const [
       totalPosts,
@@ -802,7 +804,7 @@ export const getBlogOverview = async (req: AuthenticatedRequest, res: Response) 
   }
 };
 
-export const getBlogAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+export const getBlogAnalytics = async (req: Request, res: Response) => {
   try {
     const { startDate, endDate, blogId } = req.query;
 
@@ -901,6 +903,49 @@ export const getBlogAnalytics = async (req: AuthenticatedRequest, res: Response)
     res.status(500).json({
       success: false,
       message: 'Failed to fetch blog analytics'
+    });
+  }
+};
+
+// Image Upload Controller
+export const uploadBlogImage = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file provided'
+      });
+    }
+
+    const file = req.file;
+    const bucket = process.env.AWS_S3_BUCKET as string;
+    const key = `uploads/blog-images/${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
+
+    // Upload to S3
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+      ACL: 'public-read',
+    }));
+
+    // Generate the public URL
+    const baseUrl = process.env.AWS_CDN_BASE_URL || `https://${bucket}.s3.amazonaws.com`;
+    const imageUrl = `${baseUrl}/${key}`;
+
+    console.log(`Blog image uploaded successfully: ${imageUrl}`);
+
+    res.json({
+      success: true,
+      imageUrl,
+      message: 'Image uploaded successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading blog image:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload image'
     });
   }
 };

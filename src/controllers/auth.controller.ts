@@ -66,8 +66,26 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Get the free plan for new users
     const freePlanId = await getFreePlan();
 
+    // Get the plan details to set correct credits
+    let planCredits = 0;
+    if (freePlanId !== 'basic') {
+      try {
+        const SubscriptionPlan = require('../models/SubscriptionPlan').default;
+        const planDetails = await SubscriptionPlan.findById(freePlanId);
+        if (planDetails) {
+          planCredits = planDetails.features.maxAiGenerations === 999999 ? 999999 : planDetails.features.maxAiGenerations;
+          console.log('✅ Setting credits for new user:', planCredits, 'from plan:', planDetails.name);
+        }
+      } catch (error) {
+        console.error('Error fetching plan details:', error);
+        planCredits = 50; // Fallback
+      }
+    } else {
+      planCredits = 50; // Basic plan default
+    }
+
     // Create user with free plan
-    console.log('Creating new user:', { name, email });
+    console.log('Creating new user:', { name, email, planId: freePlanId });
     const user = await User.create({
       name,
       email,
@@ -76,7 +94,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         plan: freePlanId,
         status: 'active',
         currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year for free plan
-        interval: 'monthly'
+        credits: {
+          aiFlashcards: 0,
+          aiQuizzes: 0,
+          aiNotes: 0,
+          aiAssistant: 0
+        }
       }
     });
 
@@ -494,6 +517,24 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
       // Get the free plan for new OAuth users
       const freePlanId = await getFreePlan();
 
+      // Get the plan details to set correct credits
+      let planCredits = 0;
+      if (freePlanId !== 'basic') {
+        try {
+          const SubscriptionPlan = require('../models/SubscriptionPlan').default;
+          const planDetails = await SubscriptionPlan.findById(freePlanId);
+          if (planDetails) {
+            planCredits = planDetails.features.maxAiGenerations === 999999 ? 999999 : planDetails.features.maxAiGenerations;
+            console.log('✅ Setting credits for new OAuth user:', planCredits, 'from plan:', planDetails.name);
+          }
+        } catch (error) {
+          console.error('Error fetching plan details for OAuth user:', error);
+          planCredits = 50; // Fallback
+        }
+      } else {
+        planCredits = 50; // Basic plan default
+      }
+
       // Create new user
       user = await User.create({
         email,
@@ -506,7 +547,12 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
           plan: freePlanId,
           status: 'active',
           currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year for free plan
-          interval: 'monthly'
+          credits: {
+            aiFlashcards: 0,
+            aiQuizzes: 0,
+            aiNotes: 0,
+            aiAssistant: 0
+          }
         }
       });
     }

@@ -38,67 +38,12 @@ export const loadUserFeatures = async (req: Request, res: Response, next: NextFu
         userFeatures = subscriptionPlan.selectedFeatures;
       }
     } catch (dbError) {
-      console.log('Plan not found in database, using legacy plan features...');
+      console.log('Plan not found in database:', dbError);
     }
 
-    // Fallback for legacy plans
+    // No fallback - only use database plans
     if (userFeatures.length === 0) {
-      switch (user.subscription.plan) {
-        case 'basic':
-          userFeatures = [
-            'basic_flashcards',
-            'offline_access'
-          ];
-          break;
-        case 'pro':
-          userFeatures = [
-            'basic_flashcards',
-            'unlimited_decks',
-            'unlimited_cards',
-            'offline_access',
-            'custom_categories',
-            'ai_flashcard_generation',
-            'ai_quiz_generation',
-            'ai_notes_generation',
-            'document_upload',
-            'youtube_analysis',
-            'image_upload',
-            'advanced_analytics',
-            'export_features'
-          ];
-          break;
-        case 'team':
-          userFeatures = [
-            'basic_flashcards',
-            'unlimited_decks',
-            'unlimited_cards',
-            'offline_access',
-            'custom_categories',
-            'ai_flashcard_generation',
-            'ai_quiz_generation',
-            'ai_notes_generation',
-            'ai_study_assistant',
-            'unlimited_ai_generations',
-            'document_upload',
-            'youtube_analysis',
-            'image_upload',
-            'audio_recording',
-            'bulk_import',
-            'advanced_analytics',
-            'spaced_repetition',
-            'custom_branding',
-            'api_access',
-            'export_features',
-            'priority_support',
-            'collaborative_decks',
-            'team_management',
-            'shared_analytics',
-            'bulk_user_management'
-          ];
-          break;
-        default:
-          userFeatures = ['basic_flashcards'];
-      }
+      console.log('No features found for user plan:', user.subscription.plan);
     }
 
     // Add features to request object
@@ -152,8 +97,9 @@ export const checkUserFeatureAccess = async (userId: string, featureKey: string)
     }
 
     // Legacy plan fallback
-    const legacyFeatures = getLegacyPlanFeatures(user.subscription.plan);
-    return hasFeature(legacyFeatures, featureKey);
+    // No legacy fallback - only use database plans
+    console.log('No plan features found for user:', userId);
+    return false;
   } catch (error) {
     console.error('Error checking user feature access:', error);
     return false;
@@ -180,66 +126,11 @@ export const getUserFeatures = async (userId: string): Promise<string[]> => {
       // Fallback to legacy plan logic
     }
 
-    // Legacy plan fallback
-    return getLegacyPlanFeatures(user.subscription.plan);
+    // No legacy fallback - only use database plans
+    console.log('No plan features found for user:', userId);
+    return [];
   } catch (error) {
     console.error('Error getting user features:', error);
     return [];
-  }
-};
-
-/**
- * Helper function for legacy plan features
- */
-const getLegacyPlanFeatures = (planName: string): string[] => {
-  switch (planName) {
-    case 'basic':
-      return ['basic_flashcards', 'offline_access'];
-    case 'pro':
-      return [
-        'basic_flashcards',
-        'unlimited_decks',
-        'unlimited_cards',
-        'offline_access',
-        'custom_categories',
-        'ai_flashcard_generation',
-        'ai_quiz_generation',
-        'ai_notes_generation',
-        'document_upload',
-        'youtube_analysis',
-        'image_upload',
-        'advanced_analytics',
-        'export_features'
-      ];
-    case 'team':
-      return [
-        'basic_flashcards',
-        'unlimited_decks',
-        'unlimited_cards',
-        'offline_access',
-        'custom_categories',
-        'ai_flashcard_generation',
-        'ai_quiz_generation',
-        'ai_notes_generation',
-        'ai_study_assistant',
-        'unlimited_ai_generations',
-        'document_upload',
-        'youtube_analysis',
-        'image_upload',
-        'audio_recording',
-        'bulk_import',
-        'advanced_analytics',
-        'spaced_repetition',
-        'custom_branding',
-        'api_access',
-        'export_features',
-        'priority_support',
-        'collaborative_decks',
-        'team_management',
-        'shared_analytics',
-        'bulk_user_management'
-      ];
-    default:
-      return ['basic_flashcards'];
   }
 };

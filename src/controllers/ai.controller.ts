@@ -9,8 +9,10 @@ import { supadata } from '../config/supadata';
 import User from '../models/User';
 import { PLAN_RULES, currentPeriodKey } from '../utils/plan';
 import { getPlanRulesForId } from '../utils/getPlanRules'
-import { deductCredits, refundCredits } from '../utils/credits';
+// Removed old credit system import - using new dynamic system only
+import { deductFeatureCredits, refundFeatureCredits } from '../utils/dynamicCredits';
 import { CREDIT_COSTS } from '../config/credits';
+import { checkAiGenerationLimit, checkDailyAiLimit, checkMonthlyAiLimit } from '../utils/planLimits';
 
 function looksLikeYouTubeUrl(input?: string) {
   if (!input) return false;
@@ -38,7 +40,43 @@ async function getTranscriptFromSupadata(urlOrId: string): Promise<string> {
 export const generateFlashcardsForDeck = async (req: Request, res: Response): Promise<void> => {
   try {
     const { deckId, topic, content, numberOfCards, difficulty } = req.body;
+    console.log('=== AI FLASHCARD GENERATION STARTED ===');
     console.log('Received request:', { deckId, topic, numberOfCards, difficulty });
+
+    // Check AI generation limits before proceeding
+    console.log('Checking AI generation limits for flashcards...');
+    const aiLimitCheck = await checkAiGenerationLimit(req.user._id);
+    console.log('AI limit check result for flashcards:', aiLimitCheck);
+    if (!aiLimitCheck.allowed) {
+      console.log('AI limit check failed for flashcards, returning 403');
+      res.status(403).json({ 
+        message: aiLimitCheck.message,
+        currentCount: aiLimitCheck.currentCount,
+        maxAllowed: aiLimitCheck.maxAllowed === Infinity ? 'unlimited' : aiLimitCheck.maxAllowed
+      });
+      return;
+    }
+    console.log('AI limit check passed for flashcards, continuing...');
+
+    const dailyLimitCheck = await checkDailyAiLimit(req.user._id);
+    if (!dailyLimitCheck.allowed) {
+      res.status(403).json({ 
+        message: dailyLimitCheck.message,
+        currentCount: dailyLimitCheck.currentCount,
+        maxAllowed: dailyLimitCheck.maxAllowed === Infinity ? 'unlimited' : dailyLimitCheck.maxAllowed
+      });
+      return;
+    }
+
+    const monthlyLimitCheck = await checkMonthlyAiLimit(req.user._id);
+    if (!monthlyLimitCheck.allowed) {
+      res.status(403).json({ 
+        message: monthlyLimitCheck.message,
+        currentCount: monthlyLimitCheck.currentCount,
+        maxAllowed: monthlyLimitCheck.maxAllowed === Infinity ? 'unlimited' : monthlyLimitCheck.maxAllowed
+      });
+      return;
+    }
 
     // Verify deck exists and user owns it
     const deck = await Deck.findById(deckId);
@@ -53,12 +91,18 @@ export const generateFlashcardsForDeck = async (req: Request, res: Response): Pr
       return;
     }
 
-    // Charge 1 credit for flashcard generation
-    const charge = await deductCredits(req.user._id, CREDIT_COSTS.flashcardGeneration)
-    if (!charge.ok) {
-      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
-      return
+    // Charge credits for AI flashcard generation using dynamic system
+    console.log('About to deduct AI flashcard credits...');
+    const creditResult = await deductFeatureCredits(req.user._id, 'aiFlashcards', CREDIT_COSTS.flashcardGeneration);
+    if (!creditResult.success) {
+      console.log('AI flashcard credit deduction failed:', creditResult.message);
+      res.status(403).json({ 
+        success: false, 
+        message: creditResult.message || 'Insufficient AI flashcard credits. Please upgrade your plan.' 
+      });
+      return;
     }
+    console.log('AI flashcard credit deduction successful. Remaining:', creditResult.remaining);
 
     // Generate flashcards using AI
     console.log('Generating flashcards with OpenAI...');
@@ -92,6 +136,13 @@ export const generateFlashcardsForDeck = async (req: Request, res: Response): Pr
     res.status(201).json(cards);
   } catch (error) {
     console.error('Error generating flashcards:', error);
+    // Attempt to refund credits on failure
+    try { 
+      await refundFeatureCredits(req.user._id, 'aiFlashcards', CREDIT_COSTS.flashcardGeneration);
+      console.log('AI flashcard credits refunded due to flashcard generation failure');
+    } catch (refundError) {
+      console.error('Failed to refund AI flashcard credits:', refundError);
+    }
     res.status(500).json({ message: 'Error generating flashcards', error: error instanceof Error ? error.message : 'Unknown error' });
   }
 };
@@ -353,25 +404,59 @@ export const analyzeQuizContent = async (req: Request, res: Response): Promise<v
 export const generateQuiz = async (req: Request, res: Response): Promise<void> => {
   try {
     const { content, numberOfQuestions, difficulty, questionTypes } = req.body;
+    console.log('=== AI QUIZ GENERATION STARTED ===');
+    console.log('Request params:', { numberOfQuestions, difficulty, questionTypes });
 
-    // Enforce monthly quiz limit by plan
-    const user = await User.findById(req.user._id)
-    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
-    const rules = PLAN_RULES[planId]
-    const key = currentPeriodKey()
-    const usage = user?.subscription?.usage || { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
-    const monthUsage = usage.monthKey === key ? usage : { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
-    if (typeof rules.monthlyQuizLimit === 'number' && monthUsage.quizzesGenerated >= rules.monthlyQuizLimit) {
-      res.status(403).json({ success: false, message: 'Monthly quiz generation limit reached for your plan' })
-      return
+    // Check AI generation limits before proceeding
+    console.log('Checking AI generation limits for quiz...');
+    const aiLimitCheck = await checkAiGenerationLimit(req.user._id);
+    console.log('AI limit check result for quiz:', aiLimitCheck);
+    if (!aiLimitCheck.allowed) {
+      console.log('AI limit check failed for quiz, returning 403');
+      res.status(403).json({ 
+        success: false,
+        message: aiLimitCheck.message,
+        currentCount: aiLimitCheck.currentCount,
+        maxAllowed: aiLimitCheck.maxAllowed === Infinity ? 'unlimited' : aiLimitCheck.maxAllowed
+      });
+      return;
+    }
+    console.log('AI limit check passed for quiz, continuing...');
+
+    const dailyLimitCheck = await checkDailyAiLimit(req.user._id);
+    if (!dailyLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: dailyLimitCheck.message,
+        currentCount: dailyLimitCheck.currentCount,
+        maxAllowed: dailyLimitCheck.maxAllowed === Infinity ? 'unlimited' : dailyLimitCheck.maxAllowed
+      });
+      return;
     }
 
-    // Charge 2 credits for quiz generation
-    const charge = await deductCredits(req.user._id, CREDIT_COSTS.quizGeneration)
-    if (!charge.ok) {
-      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
-      return
+    const monthlyLimitCheck = await checkMonthlyAiLimit(req.user._id);
+    if (!monthlyLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: monthlyLimitCheck.message,
+        currentCount: monthlyLimitCheck.currentCount,
+        maxAllowed: monthlyLimitCheck.maxAllowed === Infinity ? 'unlimited' : monthlyLimitCheck.maxAllowed
+      });
+      return;
     }
+
+    // Charge credits for AI quiz generation using dynamic system
+    console.log('About to deduct AI quiz credits...');
+    const creditResult = await deductFeatureCredits(req.user._id, 'aiQuizzes', CREDIT_COSTS.quizGeneration);
+    if (!creditResult.success) {
+      console.log('AI quiz credit deduction failed:', creditResult.message);
+      res.status(403).json({ 
+        success: false, 
+        message: creditResult.message || 'Insufficient AI quiz credits. Please upgrade your plan.' 
+      });
+      return;
+    }
+    console.log('AI quiz credit deduction successful. Remaining:', creditResult.remaining);
 
     // Allow passing a YouTube URL directly
     let resolvedContent = content;
@@ -438,13 +523,18 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
 
     // Increment usage counter after success
     await User.findByIdAndUpdate(req.user._id, {
-      $set: { 'subscription.usage.monthKey': key },
+      $set: { 'subscription.usage.monthKey': currentPeriodKey() },
       $inc: { 'subscription.usage.quizzesGenerated': 1 },
     })
   } catch (error) {
     console.error('Error generating quiz:', error);
-    // Attempt to refund 2 credits on failure
-    try { await refundCredits(req.user._id, CREDIT_COSTS.quizGeneration) } catch (_) {}
+    // Attempt to refund AI quiz credits on failure
+    try { 
+      await refundFeatureCredits(req.user._id, 'aiQuizzes', CREDIT_COSTS.quizGeneration);
+      console.log('AI quiz credits refunded due to generation failure');
+    } catch (refundError) {
+      console.error('Failed to refund AI quiz credits:', refundError);
+    }
     res.status(500).json({ message: 'Failed to generate quiz' });
   }
 };
@@ -454,13 +544,44 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
 // @access  Private
 export const answerQuestion = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Plan gating for AI Study Assistant
-    const user = await User.findById(req.user._id)
-    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
-    const rules = PLAN_RULES[planId]
-    if (!rules.allowAIStudyAssistant) {
-      res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
-      return
+    console.log('=== AI ASSISTANT (ANSWER QUESTION) STARTED ===');
+    
+    // Check AI generation limits before proceeding
+    console.log('Checking AI generation limits for assistant...');
+    const aiLimitCheck = await checkAiGenerationLimit(req.user._id);
+    console.log('AI limit check result for assistant:', aiLimitCheck);
+    if (!aiLimitCheck.allowed) {
+      console.log('AI limit check failed for assistant, returning 403');
+      res.status(403).json({ 
+        success: false,
+        message: aiLimitCheck.message,
+        currentCount: aiLimitCheck.currentCount,
+        maxAllowed: aiLimitCheck.maxAllowed
+      });
+      return;
+    }
+    console.log('AI limit check passed for assistant, continuing...');
+
+    const dailyLimitCheck = await checkDailyAiLimit(req.user._id);
+    if (!dailyLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: dailyLimitCheck.message,
+        currentCount: dailyLimitCheck.currentCount,
+        maxAllowed: dailyLimitCheck.maxAllowed
+      });
+      return;
+    }
+
+    const monthlyLimitCheck = await checkMonthlyAiLimit(req.user._id);
+    if (!monthlyLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: monthlyLimitCheck.message,
+        currentCount: monthlyLimitCheck.currentCount,
+        maxAllowed: monthlyLimitCheck.maxAllowed
+      });
+      return;
     }
 
     const { question, context } = req.body
@@ -518,8 +639,33 @@ Example format:
       success: true,
       answer
     })
+
+    // Deduct credits and update usage after successful response
+    console.log('About to deduct credits for AI assistant...');
+    console.log('Credit cost:', CREDIT_COSTS.aiAssistant, 'User ID:', req.user._id);
+    try {
+      const creditResult = await deductFeatureCredits(req.user._id, 'aiAssistant', CREDIT_COSTS.aiAssistant);
+      if (creditResult.success) {
+        console.log('AI assistant credit deduction successful. Remaining:', creditResult.remaining);
+        await User.findByIdAndUpdate(req.user._id, {
+          $set: { 'subscription.usage.monthKey': currentPeriodKey() },
+          $inc: { 'subscription.usage.aiGenerations': 1 },
+        });
+      } else {
+        console.log('AI assistant credit deduction failed:', creditResult.message);
+      }
+    } catch (updateError) {
+      console.error('Error updating usage after answer question:', updateError);
+    }
   } catch (error) {
     console.error('Error answering question:', error)
+    // Attempt to refund credits on failure
+    try { 
+      await refundFeatureCredits(req.user._id, 'aiAssistant', CREDIT_COSTS.aiAssistant);
+      console.log('AI assistant credits refunded due to error');
+    } catch (refundError) {
+      console.error('Failed to refund AI assistant credits:', refundError);
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to answer question'

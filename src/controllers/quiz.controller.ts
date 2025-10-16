@@ -6,11 +6,31 @@ import { getPlanRulesForId } from '../utils/getPlanRules'
 import mongoose from 'mongoose';
 import { Quiz, Note } from '../models';
 import type { IQuiz, IQuizAttempt } from '../models/Quiz';
-import { deductCredits, refundCredits } from '../utils/credits';
+// Removed old credit system import - using new dynamic system only
+import { deductFeatureCredits, refundFeatureCredits } from '../utils/dynamicCredits';
+import { CREDIT_COSTS } from '../config/credits';
+import { checkAiGenerationLimit, checkDailyAiLimit, checkMonthlyAiLimit } from '../utils/planLimits';
+import StudySession from '../models/StudySession';
 
 // Create a new quiz
 export const createQuiz = async (req: Request, res: Response): Promise<void> => {
   try {
+    console.log('=== MANUAL QUIZ CREATION STARTED ===');
+    console.log('Request body keys:', Object.keys(req.body));
+    
+    // Charge credits for manual quiz creation using dynamic system
+    console.log('About to deduct manual quiz credits...');
+    const creditResult = await deductFeatureCredits(req.user._id, 'aiQuizzes', CREDIT_COSTS.quizCreation);
+    if (!creditResult.success) {
+      console.log('Manual quiz credit deduction failed:', creditResult.message);
+      res.status(403).json({ 
+        success: false, 
+        message: creditResult.message || 'Insufficient manual quiz credits. Please upgrade your plan.'
+      });
+      return;
+    }
+    console.log('Manual quiz credit deduction successful. Remaining:', creditResult.remaining);
+
     const quizData = {
       ...req.body,
       owner: req.user._id,
@@ -26,6 +46,13 @@ export const createQuiz = async (req: Request, res: Response): Promise<void> => 
     });
   } catch (error) {
     console.error('Error creating quiz:', error);
+    // Attempt to refund credits on failure
+    try { 
+      await refundFeatureCredits(req.user._id, 'aiQuizzes', CREDIT_COSTS.quizCreation);
+      console.log('Manual quiz credits refunded due to creation failure');
+    } catch (refundError) {
+      console.error('Failed to refund manual quiz credits:', refundError);
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to create quiz',
@@ -242,6 +269,38 @@ export const submitQuizAttempt = async (req: Request, res: Response): Promise<vo
       { $push: { attempts: attempt } }
     );
 
+    // Create a study session for this quiz attempt
+    try {
+      await StudySession.create({
+        userId,
+        deckId: quiz.deckId || null, // Use deckId if available
+        sessionType: 'quiz',
+        startTime: new Date(Date.now() - totalTimeSpent * 1000), // Approximate start time
+        endTime: new Date(),
+        duration: totalTimeSpent,
+        cardsStudied: quiz.questions.length,
+        correctAnswers: score,
+        totalAnswers: quiz.questions.length,
+        accuracy: (score / quiz.questions.length) * 100,
+        isCompleted: true,
+        studyMode: {
+          cardOrder: 'sequential',
+          cardDirection: 'front-to-back',
+          showProgress: true
+        },
+        performance: {
+          easyCards: 0,
+          mediumCards: 0,
+          hardCards: 0,
+          skippedCards: 0
+        }
+      });
+      console.log('Study session created for quiz attempt');
+    } catch (sessionError) {
+      console.error('Failed to create study session for quiz:', sessionError);
+      // Don't fail the quiz submission if study session creation fails
+    }
+
     console.log('Quiz attempt submitted successfully:', {
       score,
       totalQuestions: quiz.questions.length,
@@ -339,24 +398,52 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
     const { numQuestions = 10 } = req.body; // Default to 10 questions if not specified
     const userId = req.user._id;
 
-    // Enforce monthly quiz generation limit by plan
-    const user = await User.findById(userId)
-    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
-    const rules = await getPlanRulesForId(planId)
-    const key = currentPeriodKey()
-    const usage = user?.subscription?.usage || { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
-    const monthUsage = usage.monthKey === key ? usage : { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
-    if (typeof rules.monthlyQuizLimit === 'number' && monthUsage.quizzesGenerated >= rules.monthlyQuizLimit) {
-      res.status(403).json({ success: false, message: 'Monthly quiz generation limit reached for your plan' })
-      return
+    // Check AI generation limits before proceeding
+    const aiLimitCheck = await checkAiGenerationLimit(userId);
+    if (!aiLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: aiLimitCheck.message,
+        currentCount: aiLimitCheck.currentCount,
+        maxAllowed: aiLimitCheck.maxAllowed === Infinity ? 'unlimited' : aiLimitCheck.maxAllowed
+      });
+      return;
     }
 
-    // Charge 2 credits for quiz generation
-    const charge = await deductCredits(userId, 2)
-    if (!charge.ok) {
-      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
-      return
+    const dailyLimitCheck = await checkDailyAiLimit(userId);
+    if (!dailyLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: dailyLimitCheck.message,
+        currentCount: dailyLimitCheck.currentCount,
+        maxAllowed: dailyLimitCheck.maxAllowed === Infinity ? 'unlimited' : dailyLimitCheck.maxAllowed
+      });
+      return;
     }
+
+    const monthlyLimitCheck = await checkMonthlyAiLimit(userId);
+    if (!monthlyLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: monthlyLimitCheck.message,
+        currentCount: monthlyLimitCheck.currentCount,
+        maxAllowed: monthlyLimitCheck.maxAllowed === Infinity ? 'unlimited' : monthlyLimitCheck.maxAllowed
+      });
+      return;
+    }
+
+    // Charge credits for quiz generation using dynamic system
+    console.log('About to deduct quiz credits...');
+    const creditResult = await deductFeatureCredits(userId, 'aiQuizzes', CREDIT_COSTS.quizGeneration);
+    if (!creditResult.success) {
+      console.log('Quiz credit deduction failed:', creditResult.message);
+      res.status(403).json({ 
+        success: false, 
+        message: creditResult.message || 'Insufficient quiz credits. Please upgrade your plan.' 
+      });
+      return;
+    }
+    console.log('Quiz credit deduction successful. Remaining:', creditResult.remaining);
 
     // Validate numQuestions
     const questionCount = Math.min(Math.max(1, Number(numQuestions)), 100);
@@ -477,7 +564,7 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
 
     // Increment monthly usage counter for quizzes
     await User.findByIdAndUpdate(userId, {
-      $set: { 'subscription.usage.monthKey': key },
+      $set: { 'subscription.usage.monthKey': currentPeriodKey() },
       $inc: { 'subscription.usage.quizzesGenerated': 1 },
     })
 
@@ -489,6 +576,15 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
     });
   } catch (error) {
     console.error('Error generating quiz:', error);
+    
+    // Refund credits if quiz generation failed
+    try {
+      await refundFeatureCredits(req.user._id, 'aiQuizzes', CREDIT_COSTS.quizGeneration);
+      console.log('Quiz credits refunded due to generation failure');
+    } catch (refundError) {
+      console.error('Failed to refund quiz credits:', refundError);
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Failed to generate quiz. Please try again.'

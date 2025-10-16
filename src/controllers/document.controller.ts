@@ -6,6 +6,7 @@ import { PDFExtract, PDFExtractResult } from 'pdf.js-extract'
 import { promisify } from 'util'
 import fs from 'fs'
 import path from 'path'
+import { checkFileUploadSizeLimit, checkStorageLimit } from '../utils/planLimits'
 
 const readFile = promisify(fs.readFile)
 const pdfExtract = new PDFExtract()
@@ -19,12 +20,25 @@ interface PDFPage {
 
 export const analyzeDocument = async (req: Request, res: Response) => {
   try {
-    // Plan gating: documents allowed only for Pro/Team
-    const user = await User.findById(req.user._id)
-    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
-    const rules = PLAN_RULES[planId]
-    if (!rules.allowDocuments) {
-      return res.status(403).json({ success: false, message: 'Your plan does not allow document uploading' })
+    // Check plan limits for file upload size and storage
+    const fileSizeCheck = await checkFileUploadSizeLimit(req.user._id, req.file?.size || 0);
+    if (!fileSizeCheck.allowed) {
+      return res.status(403).json({ 
+        success: false, 
+        message: fileSizeCheck.message,
+        currentCount: fileSizeCheck.fileSize,
+        maxAllowed: fileSizeCheck.maxAllowed
+      });
+    }
+
+    const storageCheck = await checkStorageLimit(req.user._id, (req.file?.size || 0) / (1024 * 1024)); // Convert to MB
+    if (!storageCheck.allowed) {
+      return res.status(403).json({ 
+        success: false, 
+        message: storageCheck.message,
+        currentCount: storageCheck.currentUsage,
+        maxAllowed: storageCheck.maxAllowed
+      });
     }
 
     if (!req.file) {
@@ -33,6 +47,7 @@ export const analyzeDocument = async (req: Request, res: Response) => {
         message: 'No file uploaded'
       })
     }
+
 
     const file = req.file
     const fileExtension = path.extname(file.originalname).toLowerCase()

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import stripe, { SUBSCRIPTION_PLANS } from '../config/stripe';
+import stripe from '../config/stripe';
 import User from '../models/User';
 import Plan from '../models/Plan';
 import SubscriptionPlan from '../models/SubscriptionPlan';
@@ -25,28 +25,19 @@ export const createCheckoutSession = async (req: Request, res: Response): Promis
           id: subscriptionPlan._id.toString(),
           name: subscriptionPlan.name,
           price: subscriptionPlan.price.monthly,
-          credits: subscriptionPlan.limits.monthlyAiGenerations || 50,
+          credits: subscriptionPlan.features.aiFlashcardCredits || 0,
           description: subscriptionPlan.description
         };
       }
     } catch (dbError) {
-      console.log('Plan not found in database, checking hardcoded plans...');
+      console.log('Plan not found in database:', dbError);
     }
 
-    // Fallback to hardcoded plans if not found in database
+    // Only use database plans - no hardcoded fallback
     if (!plan) {
-      switch (planId) {
-        case 'pro':
-          plan = SUBSCRIPTION_PLANS.PRO;
-          break;
-        case 'team':
-          plan = SUBSCRIPTION_PLANS.TEAM;
-          break;
-        default:
-          console.log('Invalid plan selected:', planId);
-          res.status(400).json({ success: false, message: 'Invalid plan selected' });
-          return;
-      }
+      console.log('Plan not found in database:', planId);
+      res.status(400).json({ success: false, message: 'Plan not found. Please contact support.' });
+      return;
     }
 
     // Get the user
@@ -202,29 +193,18 @@ export const updateSubscription = async (req: Request, res: Response): Promise<v
           id: subscriptionPlan._id.toString(),
           name: subscriptionPlan.name,
           price: subscriptionPlan.price.monthly,
-          credits: subscriptionPlan.limits.monthlyAiGenerations || 50
+          credits: subscriptionPlan.features.aiFlashcardCredits || 0
         };
       }
     } catch (dbError) {
-      console.log('Plan not found in database, checking hardcoded plans...');
+      console.log('Plan not found in database:', dbError);
     }
 
-    // Fallback to hardcoded plans if not found in database
+    // Only use database plans - no hardcoded fallback
     if (!plan) {
-      switch (planId) {
-        case 'basic':
-          plan = SUBSCRIPTION_PLANS.BASIC;
-          break;
-        case 'pro':
-          plan = SUBSCRIPTION_PLANS.PRO;
-          break;
-        case 'team':
-          plan = SUBSCRIPTION_PLANS.TEAM;
-          break;
-        default:
-          res.status(400).json({ success: false, message: 'Invalid plan selected' });
-          return;
-      }
+      console.log('Plan not found in database:', planId);
+      res.status(400).json({ success: false, message: 'Plan not found. Please contact support.' });
+      return;
     }
 
     // Update user subscription
@@ -279,61 +259,32 @@ export const getSubscription = async (req: Request, res: Response): Promise<void
           id: subscriptionPlan._id.toString(),
           name: subscriptionPlan.name,
           price: subscriptionPlan.price.monthly,
+          selectedFeatures: subscriptionPlan.selectedFeatures || [],
           features: [
             `Up to ${subscriptionPlan.features.maxDecks === 999999 ? 'Unlimited' : subscriptionPlan.features.maxDecks} decks`,
-            `Up to ${subscriptionPlan.features.maxCards === 999999 ? 'Unlimited' : subscriptionPlan.features.maxCards} cards per deck`,
-            `${subscriptionPlan.features.maxStorage >= 1024 ? Math.round(subscriptionPlan.features.maxStorage / 1024) + 'GB' : subscriptionPlan.features.maxStorage + 'MB'} storage`,
-            `${subscriptionPlan.limits.dailyAiGenerations} AI generations per day`,
-            `${subscriptionPlan.limits.monthlyAiGenerations === 999999 ? 'Unlimited' : subscriptionPlan.limits.monthlyAiGenerations} AI generations per month`,
-            ...(subscriptionPlan.features.offlineAccess ? ['Offline access'] : []),
-            ...(subscriptionPlan.features.prioritySupport ? ['Priority support'] : []),
-            ...(subscriptionPlan.features.advancedAnalytics ? ['Advanced analytics'] : [])
+            `${subscriptionPlan.features.aiFlashcardCredits === 999999 ? 'Unlimited' : subscriptionPlan.features.aiFlashcardCredits} AI flashcard credits`,
+            `${subscriptionPlan.features.aiQuizCredits === 999999 ? 'Unlimited' : subscriptionPlan.features.aiQuizCredits} AI quiz credits`,
+            `${subscriptionPlan.features.aiNotesCredits === 999999 ? 'Unlimited' : subscriptionPlan.features.aiNotesCredits} AI notes credits`,
+            `${subscriptionPlan.features.aiAssistantCredits === 999999 ? 'Unlimited' : subscriptionPlan.features.aiAssistantCredits} AI assistant credits`
           ].filter(Boolean)
         };
       }
     } catch (dbError) {
-      console.log('Plan not found in database, using hardcoded plan details...');
+      console.log('Plan not found in database:', dbError);
     }
 
-    // Fallback to hardcoded plans
+    // Only use database plans - no hardcoded fallback
     if (!planDetails) {
-      switch (user.subscription.plan) {
-        case 'basic':
-          planDetails = SUBSCRIPTION_PLANS.BASIC;
-          break;
-        case 'pro':
-          planDetails = SUBSCRIPTION_PLANS.PRO;
-          break;
-        case 'team':
-          planDetails = SUBSCRIPTION_PLANS.TEAM;
-          break;
-        default:
-          planDetails = SUBSCRIPTION_PLANS.BASIC;
-      }
+      console.log('Plan not found in database for user:', userId, 'plan:', user.subscription.plan);
+      res.status(400).json({ 
+        success: false, 
+        message: 'Subscription plan not found. Please contact support.' 
+      });
+      return;
     }
 
-    // Calculate credits based on the plan
-    let credits = 50; // Default fallback
-    
-    if (subscriptionPlan) {
-      // Use credits from database plan
-      credits = subscriptionPlan.features.maxAiGenerations === 999999 ? 999999 : subscriptionPlan.features.maxAiGenerations;
-    } else {
-      // Fallback for hardcoded plans
-      switch (user.subscription.plan) {
-        case 'basic':
-          credits = 50;
-          break;
-        case 'pro':
-          credits = 200;
-          break;
-        case 'team':
-          credits = 500;
-          break;
-        default:
-          credits = 50;
-      }
-    }
+    // Calculate credits based on the database plan
+    const credits = subscriptionPlan?.features?.aiFlashcardCredits === 999999 ? 999999 : (subscriptionPlan?.features?.aiFlashcardCredits || 0);
 
     res.status(200).json({
       success: true,
@@ -368,29 +319,19 @@ export const getPlans = async (req: Request, res: Response): Promise<void> => {
         id: plan._id.toString(),
         name: plan.name,
         price: plan.price.monthly,
-        monthlyCredits: plan.limits.monthlyAiGenerations || 50,
-        allowDocuments: plan.features.maxStorage > 0,
-        allowYoutubeAnalyze: plan.features.advancedAnalytics,
-        allowAIFlashcards: plan.features.maxAiGenerations > 0,
-        allowAIStudyAssistant: plan.features.prioritySupport,
-        monthlyQuizLimit: plan.limits.monthlyAiGenerations === 999999 ? null : plan.limits.monthlyAiGenerations,
-        monthlyNotesLimit: plan.limits.monthlyAiGenerations === 999999 ? null : Math.floor(plan.limits.monthlyAiGenerations / 2),
+        monthlyCredits: plan.features.aiFlashcardCredits || 0,
+        allowDocuments: true, // All plans allow documents
+        allowYoutubeAnalyze: true, // All plans allow YouTube analysis
+        allowAIFlashcards: plan.features.aiFlashcardCredits > 0,
+        allowAIStudyAssistant: plan.features.aiAssistantCredits > 0,
+        monthlyQuizLimit: plan.features.aiQuizCredits === 999999 ? null : plan.features.aiQuizCredits,
+        monthlyNotesLimit: plan.features.aiNotesCredits === 999999 ? null : plan.features.aiNotesCredits,
         features: [
           `Up to ${plan.features.maxDecks === 999999 ? 'Unlimited' : plan.features.maxDecks} decks`,
-          `Up to ${plan.features.maxCards === 999999 ? 'Unlimited' : plan.features.maxCards} cards per deck`,
-          `${plan.features.maxStorage >= 1024 ? Math.round(plan.features.maxStorage / 1024) + 'GB' : plan.features.maxStorage + 'MB'} storage`,
-          `${plan.limits.dailyAiGenerations} AI generations per day`,
-          `${plan.limits.monthlyAiGenerations === 999999 ? 'Unlimited' : plan.limits.monthlyAiGenerations} AI generations per month`,
-          `${plan.limits.concurrentSessions} concurrent session${plan.limits.concurrentSessions > 1 ? 's' : ''}`,
-          `${plan.limits.fileUploadSize}MB file upload limit`,
-          ...(plan.features.offlineAccess ? ['Offline access'] : []),
-          ...(plan.features.prioritySupport ? ['Priority support'] : []),
-          ...(plan.features.advancedAnalytics ? ['Advanced analytics'] : []),
-          ...(plan.features.customBranding ? ['Custom branding'] : []),
-          ...(plan.features.apiAccess ? ['API access'] : []),
-          ...(plan.features.exportFeatures ? ['Export features'] : []),
-          ...(plan.features.collaborativeDecks ? ['Collaborative decks'] : []),
-          ...(plan.features.customCategories ? ['Custom categories'] : [])
+          `${plan.features.aiFlashcardCredits === 999999 ? 'Unlimited' : plan.features.aiFlashcardCredits} AI flashcard credits`,
+          `${plan.features.aiQuizCredits === 999999 ? 'Unlimited' : plan.features.aiQuizCredits} AI quiz credits`,
+          `${plan.features.aiNotesCredits === 999999 ? 'Unlimited' : plan.features.aiNotesCredits} AI notes credits`,
+          `${plan.features.aiAssistantCredits === 999999 ? 'Unlimited' : plan.features.aiAssistantCredits} AI assistant credits`
         ].filter(Boolean)
       }));
 
@@ -398,73 +339,13 @@ export const getPlans = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Fallback to hardcoded plans if no database plans exist
-    const fallback = [
-      {
-        id: SUBSCRIPTION_PLANS.BASIC.id,
-        name: SUBSCRIPTION_PLANS.BASIC.name,
-        price: SUBSCRIPTION_PLANS.BASIC.price,
-        monthlyCredits: SUBSCRIPTION_PLANS.BASIC.credits,
-        allowDocuments: false,
-        allowYoutubeAnalyze: false,
-        allowAIFlashcards: false,
-        allowAIStudyAssistant: false,
-        monthlyQuizLimit: 3,
-        monthlyNotesLimit: 3,
-        features: [
-          'Unlimited Non-AI Flashcards',
-          '50 Credits / month',
-          'No Document Uploading',
-          'No YouTube Video URL Analyze',
-          '3 Quiz Generation',
-          '3 Notes Generation',
-          'No AI Study Assistant',
-        ],
-      },
-      {
-        id: SUBSCRIPTION_PLANS.PRO.id,
-        name: SUBSCRIPTION_PLANS.PRO.name,
-        price: SUBSCRIPTION_PLANS.PRO.price,
-        monthlyCredits: SUBSCRIPTION_PLANS.PRO.credits,
-        allowDocuments: true,
-        allowYoutubeAnalyze: true,
-        allowAIFlashcards: true,
-        allowAIStudyAssistant: true,
-        monthlyQuizLimit: 50,
-        monthlyNotesLimit: 50,
-        features: [
-          'Unlimited AI flashcards',
-          '200 Credits / month',
-          'Document Uploading',
-          'YouTube Video URL Analyze',
-          '50 Quiz Generation',
-          '50 Notes Generation',
-          'AI Study Assistant',
-        ],
-      },
-      {
-        id: SUBSCRIPTION_PLANS.TEAM.id,
-        name: SUBSCRIPTION_PLANS.TEAM.name,
-        price: SUBSCRIPTION_PLANS.TEAM.price,
-        monthlyCredits: SUBSCRIPTION_PLANS.TEAM.credits,
-        allowDocuments: true,
-        allowYoutubeAnalyze: true,
-        allowAIFlashcards: true,
-        allowAIStudyAssistant: true,
-        monthlyQuizLimit: null,
-        monthlyNotesLimit: null,
-        features: [
-          'Unlimited AI flashcards',
-          '500 Credits / month',
-          'Document Uploading',
-          'YouTube Video URL Analyze',
-          'Unlimited Quiz Generation',
-          'Unlimited Notes Generation',
-          'AI Study Assistant',
-        ],
-      },
-    ];
-    res.status(200).json({ success: true, plans: fallback });
+    // No database plans found
+    console.log('No subscription plans found in database');
+    res.status(200).json({ 
+      success: true, 
+      plans: [],
+      message: 'No subscription plans available. Please contact support.' 
+    });
   } catch (error) {
     console.error('Error getting plans:', error);
     res.status(500).json({ success: false, message: 'Failed to load plans' });

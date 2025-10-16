@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   getDashboardStats,
+  getRecentActivity,
   getUserAnalytics,
   getContentAnalytics,
   getRevenueAnalytics,
@@ -18,6 +19,7 @@ router.use(protectAdmin);
 
 // Analytics Routes
 router.get('/analytics/dashboard', requirePermissions(['analytics.read']), getDashboardStats);
+router.get('/analytics/activity', requirePermissions(['analytics.read']), getRecentActivity);
 router.get('/analytics/users', requirePermissions(['analytics.read', 'users.read']), getUserAnalytics);
 router.get('/analytics/content', requirePermissions(['analytics.read', 'content.read']), getContentAnalytics);
 router.get('/analytics/revenue', requirePermissions(['analytics.read', 'subscriptions.read']), getRevenueAnalytics);

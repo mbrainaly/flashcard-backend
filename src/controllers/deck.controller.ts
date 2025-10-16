@@ -2,25 +2,40 @@ import { Request, Response } from 'express';
 import Deck from '../models/Deck';
 import Card from '../models/Card';
 import { calculateProgress } from '../utils/spacedRepetition';
+import { checkDeckLimit } from '../utils/planLimits';
 
 // @desc    Create a new deck
 // @route   POST /api/decks
 // @access  Private
 export const createDeck = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { title, description, tags, isPublic } = req.body;
+    const { title, description, tags, isPublic, category, difficulty } = req.body;
+
+    // Check user's deck limit
+    const deckLimitCheck = await checkDeckLimit(req.user._id);
+    if (!deckLimitCheck.allowed) {
+      res.status(403).json({ 
+        message: deckLimitCheck.message,
+        currentCount: deckLimitCheck.currentCount,
+        maxAllowed: deckLimitCheck.maxAllowed === Infinity ? 'unlimited' : deckLimitCheck.maxAllowed
+      });
+      return;
+    }
 
     const deck = await Deck.create({
       title,
       description,
-      tags,
-      isPublic,
+      tags: tags || [],
+      isPublic: isPublic || false,
+      category: category || 'General',
+      difficulty: difficulty || 'beginner',
       owner: req.user._id,
     });
 
     res.status(201).json(deck);
   } catch (error) {
-    res.status(500).json({ message: 'Error creating deck' });
+    console.error('Error creating deck:', error);
+    res.status(500).json({ message: 'Error creating deck', error: error instanceof Error ? error.message : 'Unknown error' });
   }
 };
 

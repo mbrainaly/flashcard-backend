@@ -4,12 +4,14 @@ import openaiClient from '../config/openai'
 import User from '../models/User'
 import { PLAN_RULES, currentPeriodKey } from '../utils/plan'
 import { getPlanRulesForId } from '../utils/getPlanRules'
-import { deductCredits, refundCredits } from '../utils/credits'
+// Removed old credit system import - using new dynamic system only
+import { deductFeatureCredits, refundFeatureCredits } from '../utils/dynamicCredits'
 import { CREDIT_COSTS } from '../config/credits'
 import { Note } from '../models'
 import ytdl from 'ytdl-core'
 import { extractTextFromFile } from '../utils/fileProcessing'
 import { supadata } from '../config/supadata'
+import { checkAiGenerationLimit, checkDailyAiLimit, checkMonthlyAiLimit } from '../utils/planLimits'
 
 // Helper: extract YouTube video ID from multiple URL formats
 function extractYouTubeId(input: string): string | null {
@@ -185,6 +187,29 @@ export const getHomeworkHelp = async (req: Request, res: Response): Promise<void
       return
     }
 
+    // Check AI generation limits before proceeding
+    const aiLimitCheck = await checkAiGenerationLimit(req.user._id);
+    if (!aiLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: aiLimitCheck.message,
+        currentCount: aiLimitCheck.currentCount,
+        maxAllowed: aiLimitCheck.maxAllowed === Infinity ? 'unlimited' : aiLimitCheck.maxAllowed
+      });
+      return;
+    }
+
+    const dailyLimitCheck = await checkDailyAiLimit(req.user._id);
+    if (!dailyLimitCheck.allowed) {
+      res.status(403).json({ 
+        success: false,
+        message: dailyLimitCheck.message,
+        currentCount: dailyLimitCheck.currentCount,
+        maxAllowed: dailyLimitCheck.maxAllowed === Infinity ? 'unlimited' : dailyLimitCheck.maxAllowed
+      });
+      return;
+    }
+
     // Process uploaded file if present
     if (req.file) {
       try {
@@ -251,17 +276,10 @@ ${fileContent ? `\nAdditional Context:\n${fileContent}` : ''}`
 export const generateNotes = async (req: Request, res: Response): Promise<void> => {
   try {
     const { content, type } = req.body;
-    // Enforce plan feature gating (e.g., YouTube analysis) and monthly usage limits
-    const user = await User.findById(req.user._id)
-    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
-    const rules = await getPlanRulesForId(planId)
-    const key = currentPeriodKey()
-    const usage = user?.subscription?.usage || { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
-    const monthUsage = usage.monthKey === key ? usage : { monthKey: key, quizzesGenerated: 0, notesGenerated: 0 }
-    if (typeof rules.monthlyNotesLimit === 'number' && monthUsage.notesGenerated >= rules.monthlyNotesLimit) {
-      res.status(403).json({ success: false, message: 'Monthly notes generation limit reached for your plan' })
-      return
-    }
+    console.log('=== NOTES GENERATION STARTED ===');
+    console.log('Request body:', { content: content?.substring(0, 100) + '...', type });
+    
+    // Note: We'll check and deduct credits later in the function using the dynamic credit system
     console.log('Received request:', { type, content });
 
     if (!content) {
@@ -271,6 +289,19 @@ export const generateNotes = async (req: Request, res: Response): Promise<void> 
       });
       return;
     }
+
+    // Charge credits for AI notes generation using dynamic system (moved to beginning)
+    console.log('About to deduct AI notes credits...');
+    const creditResult = await deductFeatureCredits(req.user._id, 'aiNotes', CREDIT_COSTS.notesAnalysis);
+    if (!creditResult.success) {
+      console.log('AI notes credit deduction failed:', creditResult.message);
+      res.status(403).json({ 
+        success: false, 
+        message: creditResult.message || 'Insufficient AI notes credits. Please upgrade your plan.' 
+      });
+      return;
+    }
+    console.log('AI notes credit deduction successful. Remaining:', creditResult.remaining);
 
     // Construct the prompt based on content type
     let prompt = '';
@@ -284,10 +315,6 @@ export const generateNotes = async (req: Request, res: Response): Promise<void> 
         prompt = `Convert the following content into well-structured study notes:\n\n${content}`;
         break;
       case 'video':
-        if (!rules.allowYoutubeAnalyze) {
-          res.status(403).json({ success: false, message: 'Your plan does not allow YouTube URL analysis' })
-          return;
-        }
         const videoId = extractYouTubeId(content || '')
         
         if (!videoId) {
@@ -339,13 +366,6 @@ Format the entire response in clean HTML without any markdown or other formattin
         break;
       default:
         prompt = `Create organized study notes from the following:\n\n${content}`;
-    }
-
-    // Charge 3 credits for notes generation
-    const charge = await deductCredits(req.user._id, CREDIT_COSTS.notesAnalysis)
-    if (!charge.ok) {
-      res.status(403).json({ success: false, message: 'Insufficient credits. Please upgrade your plan.' })
-      return
     }
 
     console.log('Sending prompt to OpenAI');
@@ -416,13 +436,18 @@ Your response must follow these strict rules:
 
     // Increment monthly usage counter for notes
     await User.findByIdAndUpdate(req.user._id, {
-      $set: { 'subscription.usage.monthKey': key },
+      $set: { 'subscription.usage.monthKey': currentPeriodKey() },
       $inc: { 'subscription.usage.notesGenerated': 1 },
     })
 
   } catch (error) {
     console.error('Error generating notes:', error);
-    try { await refundCredits(req.user._id, CREDIT_COSTS.notesAnalysis) } catch (_) {}
+    try { 
+      await refundFeatureCredits(req.user._id, 'aiNotes', CREDIT_COSTS.notesAnalysis);
+      console.log('AI notes credits refunded due to generation failure');
+    } catch (refundError) {
+      console.error('Failed to refund AI notes credits:', refundError);
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to generate notes. Please try again.'
@@ -443,12 +468,14 @@ export const saveNotes = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Create or update note
-    const note = await Note.findOneAndUpdate(
-      { userId, title }, // find by userId and title
-      { content, userId }, // update content
-      { upsert: true, new: true } // create if doesn't exist, return updated doc
-    );
+    // Always create a new note (don't update existing ones with same title)
+    const note = new Note({
+      title,
+      content,
+      userId
+    });
+    
+    await note.save();
 
     res.status(200).json({
       success: true,

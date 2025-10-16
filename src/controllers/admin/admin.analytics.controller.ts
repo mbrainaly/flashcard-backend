@@ -8,10 +8,132 @@ import Subscription from '../../models/Subscription';
 import SubscriptionPlan from '../../models/SubscriptionPlan';
 import Transaction from '../../models/Transaction';
 import Blog from '../../models/Blog';
-import { AuthenticatedRequest } from '../../middleware/admin.auth.middleware';
+import BlogCategory from '../../models/BlogCategory';
+import BlogTag from '../../models/BlogTag';
 
 // Dashboard Analytics Controller
-export const getDashboardStats = async (req: AuthenticatedRequest, res: Response) => {
+// Recent Activity Controller
+export const getRecentActivity = async (req: Request, res: Response) => {
+  try {
+    const { limit = 10 } = req.query;
+    const limitNum = parseInt(limit as string);
+    
+    const activities: any[] = [];
+    
+    // Recent user registrations
+    const recentUsers = await User.find()
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('name email createdAt')
+      .lean();
+    
+    recentUsers.forEach(user => {
+      activities.push({
+        id: `user-${user._id}`,
+        type: 'user',
+        message: `New user registration: ${user.email}`,
+        timestamp: user.createdAt,
+        user: 'System'
+      });
+    });
+    
+    // Recent deck creations
+    const recentDecks = await Deck.find()
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('owner', 'name')
+      .select('title createdAt owner')
+      .lean();
+    
+    recentDecks.forEach(deck => {
+      activities.push({
+        id: `deck-${deck._id}`,
+        type: 'content',
+        message: `New deck created: "${deck.title}"`,
+        timestamp: deck.createdAt,
+        user: (deck.owner as any)?.name || 'Unknown User'
+      });
+    });
+    
+    // Recent subscriptions
+    const recentSubscriptions = await Subscription.find({ status: 'active' })
+      .sort({ createdAt: -1 })
+      .limit(3)
+      .populate('userId', 'name')
+      .populate('planId', 'name')
+      .select('createdAt userId planId')
+      .lean();
+    
+    recentSubscriptions.forEach(sub => {
+      activities.push({
+        id: `subscription-${sub._id}`,
+        type: 'subscription',
+        message: `Premium subscription activated`,
+        timestamp: sub.createdAt,
+        user: (sub.userId as any)?.name || 'Unknown User'
+      });
+    });
+    
+    // Recent quiz completions
+    const recentQuizzes = await Quiz.find({ 'attempts.0': { $exists: true } })
+      .sort({ updatedAt: -1 })
+      .limit(3)
+      .populate('owner', 'name')
+      .select('title updatedAt owner attempts')
+      .lean();
+    
+    recentQuizzes.forEach(quiz => {
+      const latestAttempt = quiz.attempts[quiz.attempts.length - 1];
+      if (latestAttempt) {
+        activities.push({
+          id: `quiz-${quiz._id}`,
+          type: 'content',
+          message: `Quiz completed: "${quiz.title}"`,
+          timestamp: latestAttempt.completedAt || quiz.updatedAt,
+          user: (quiz.owner as any)?.name || 'Unknown User'
+        });
+      }
+    });
+    
+    // Sort by timestamp and limit
+    const sortedActivities = activities
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limitNum)
+      .map(activity => ({
+        ...activity,
+        timestamp: formatTimeAgo(activity.timestamp)
+      }));
+    
+    res.json({
+      success: true,
+      data: sortedActivities
+    });
+  } catch (error) {
+    console.error('Error fetching recent activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch recent activity'
+    });
+  }
+};
+
+// Helper function to format time ago
+function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffInMs = now.getTime() - new Date(date).getTime();
+  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  
+  if (diffInMinutes < 1) return 'Just now';
+  if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
+  if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+  if (diffInDays < 30) return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+  
+  return new Date(date).toLocaleDateString();
+}
+
+export const getDashboardStats = async (req: Request, res: Response) => {
   try {
     const { period = '30d' } = req.query;
 
@@ -179,7 +301,7 @@ export const getDashboardStats = async (req: AuthenticatedRequest, res: Response
 };
 
 // User Analytics Controller
-export const getUserAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+export const getUserAnalytics = async (req: Request, res: Response) => {
   try {
     const { startDate, endDate, segment } = req.query;
 
@@ -356,7 +478,7 @@ export const getUserAnalytics = async (req: AuthenticatedRequest, res: Response)
 };
 
 // Content Analytics Controller
-export const getContentAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+export const getContentAnalytics = async (req: Request, res: Response) => {
   try {
     const { startDate, endDate, contentType } = req.query;
 
@@ -498,7 +620,7 @@ export const getContentAnalytics = async (req: AuthenticatedRequest, res: Respon
 };
 
 // Revenue Analytics Controller
-export const getRevenueAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+export const getRevenueAnalytics = async (req: Request, res: Response) => {
   try {
     const { startDate, endDate, currency = 'USD' } = req.query;
 
@@ -666,7 +788,7 @@ export const getRevenueAnalytics = async (req: AuthenticatedRequest, res: Respon
 };
 
 // AI Usage Analytics Controller
-export const getAIUsageAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+export const getAIUsageAnalytics = async (req: Request, res: Response) => {
   try {
     const { startDate, endDate } = req.query;
 
@@ -731,7 +853,7 @@ export const getAIUsageAnalytics = async (req: AuthenticatedRequest, res: Respon
 };
 
 // System Performance Controller
-export const getSystemPerformance = async (req: AuthenticatedRequest, res: Response) => {
+export const getSystemPerformance = async (req: Request, res: Response) => {
   try {
     // Mock system performance data
     // In a real implementation, you'd integrate with monitoring tools like New Relic, DataDog, etc.
@@ -810,7 +932,7 @@ export const getSystemPerformance = async (req: AuthenticatedRequest, res: Respo
 };
 
 // Export Analytics Controller
-export const exportAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+export const exportAnalytics = async (req: Request, res: Response) => {
   try {
     const { type, format = 'json', startDate, endDate } = req.body;
 

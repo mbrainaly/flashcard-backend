@@ -5,12 +5,12 @@ import Card from '../../models/Card';
 import Quiz from '../../models/Quiz';
 import Note from '../../models/note.model';
 import Subscription from '../../models/Subscription';
-import { AuthenticatedRequest } from '../../middleware/admin.auth.middleware';
+import { Request } from 'express';
 
 // @desc    Get all users with optimized performance
 // @route   GET /api/admin/users
 // @access  Private (Admin)
-export const getAllUsersOptimized = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllUsersOptimized = async (req: Request, res: Response) => {
   try {
     const { 
       search, 

@@ -4,7 +4,6 @@ import Subscription from '../../models/Subscription';
 import SubscriptionPlan from '../../models/SubscriptionPlan';
 import Transaction from '../../models/Transaction';
 import User from '../../models/User';
-import { AuthenticatedRequest } from '../../middleware/admin.auth.middleware';
 import { AVAILABLE_FEATURES, FEATURE_CATEGORIES } from '../../config/features';
 
 // Subscription Management Controllers
@@ -64,7 +63,7 @@ const generateFeaturesList = (planDetails: any): string[] => {
   return [];
 };
 
-export const getAllSubscriptions = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllSubscriptions = async (req: Request, res: Response) => {
   try {
     const { 
       status, 
@@ -195,7 +194,7 @@ export const getAllSubscriptions = async (req: AuthenticatedRequest, res: Respon
         user: {
           name: user.name,
           email: user.email,
-          avatar: user.avatar
+          avatar: (user as any).avatar || '/authors/default-avatar.jpg'
         },
         plan: {
           name: planDetails.name,
@@ -236,7 +235,7 @@ export const getAllSubscriptions = async (req: AuthenticatedRequest, res: Respon
   }
 };
 
-export const getSubscriptionById = async (req: AuthenticatedRequest, res: Response) => {
+export const getSubscriptionById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -287,7 +286,7 @@ export const getSubscriptionById = async (req: AuthenticatedRequest, res: Respon
   }
 };
 
-export const updateSubscription = async (req: AuthenticatedRequest, res: Response) => {
+export const updateSubscription = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -363,7 +362,7 @@ export const updateSubscription = async (req: AuthenticatedRequest, res: Respons
       user: {
         name: user.name,
         email: user.email,
-        avatar: user.avatar
+        avatar: (user as any).avatar || '/authors/default-avatar.jpg'
       },
       plan: {
         name: planDetails?.name || 'Unknown Plan',
@@ -394,7 +393,7 @@ export const updateSubscription = async (req: AuthenticatedRequest, res: Respons
   }
 };
 
-export const deleteSubscription = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteSubscription = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const admin = req.admin;
@@ -422,7 +421,7 @@ export const deleteSubscription = async (req: AuthenticatedRequest, res: Respons
     };
 
     // Remove subscription from user
-    user.subscription = undefined;
+    (user as any).subscription = undefined;
     await user.save();
 
     res.json({
@@ -438,7 +437,7 @@ export const deleteSubscription = async (req: AuthenticatedRequest, res: Respons
   }
 };
 
-export const cancelSubscription = async (req: AuthenticatedRequest, res: Response) => {
+export const cancelSubscription = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { reason, cancelAtPeriodEnd = true } = req.body;
@@ -502,7 +501,7 @@ export const cancelSubscription = async (req: AuthenticatedRequest, res: Respons
 
 // Plan Management Controllers
 
-export const getAllPlans = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllPlans = async (req: Request, res: Response) => {
   try {
     const { isActive, isPublic, search, sortBy = 'metadata.sortOrder', sortOrder = 'asc' } = req.query;
 
@@ -540,31 +539,38 @@ export const getAllPlans = async (req: AuthenticatedRequest, res: Response) => {
       
       // Convert features object to string array for frontend
       const featuresArray = [];
-      if (plan.features.maxDecks === -1) {
+      
+      // Max Decks
+      if (plan.features.maxDecks === 999999) {
         featuresArray.push('Unlimited decks');
       } else if (plan.features.maxDecks > 0) {
         featuresArray.push(`Up to ${plan.features.maxDecks} decks`);
       }
       
-      if (plan.features.maxCards === -1) {
-        featuresArray.push('Unlimited cards per deck');
-      } else if (plan.features.maxCards > 0) {
-        featuresArray.push(`Up to ${plan.features.maxCards} cards per deck`);
+      // AI Credits
+      if (plan.features.aiFlashcardCredits === 999999) {
+        featuresArray.push('Unlimited AI flashcard generation');
+      } else if (plan.features.aiFlashcardCredits > 0) {
+        featuresArray.push(`${plan.features.aiFlashcardCredits} AI flashcard credits`);
       }
       
-      if (plan.features.maxStorage > 0) {
-        const storageGB = plan.features.maxStorage >= 1024 ? `${Math.round(plan.features.maxStorage / 1024)}GB` : `${plan.features.maxStorage}MB`;
-        featuresArray.push(`${storageGB} storage`);
+      if (plan.features.aiQuizCredits === 999999) {
+        featuresArray.push('Unlimited AI quiz generation');
+      } else if (plan.features.aiQuizCredits > 0) {
+        featuresArray.push(`${plan.features.aiQuizCredits} AI quiz credits`);
       }
       
-      if (plan.features.prioritySupport) featuresArray.push('Priority support');
-      if (plan.features.advancedAnalytics) featuresArray.push('Advanced analytics');
-      if (plan.features.customBranding) featuresArray.push('Custom branding');
-      if (plan.features.apiAccess) featuresArray.push('API access');
-      if (plan.features.exportFeatures) featuresArray.push('Export features');
-      if (plan.features.collaborativeDecks) featuresArray.push('Collaborative decks');
-      if (plan.features.offlineAccess) featuresArray.push('Offline access');
-      if (plan.features.customCategories) featuresArray.push('Custom categories');
+      if (plan.features.aiNotesCredits === 999999) {
+        featuresArray.push('Unlimited AI notes generation');
+      } else if (plan.features.aiNotesCredits > 0) {
+        featuresArray.push(`${plan.features.aiNotesCredits} AI notes credits`);
+      }
+      
+      if (plan.features.aiAssistantCredits === 999999) {
+        featuresArray.push('Unlimited AI assistant usage');
+      } else if (plan.features.aiAssistantCredits > 0) {
+        featuresArray.push(`${plan.features.aiAssistantCredits} AI assistant credits`);
+      }
 
       return {
         _id: plan._id,
@@ -574,11 +580,21 @@ export const getAllPlans = async (req: AuthenticatedRequest, res: Response) => {
         interval: 'monthly' as const,
         features: featuresArray,
         limits: {
-          decks: plan.features.maxDecks === -1 ? 'unlimited' : plan.features.maxDecks,
-          cards: plan.features.maxCards === -1 ? 'unlimited' : plan.features.maxCards,
-          storage: plan.features.maxStorage >= 1024 ? `${Math.round(plan.features.maxStorage / 1024)}GB` : `${plan.features.maxStorage}MB`,
-          support: plan.features.prioritySupport ? 'Priority' : 'Email'
+          decks: plan.features.maxDecks === 999999 ? 'unlimited' : plan.features.maxDecks,
+          aiFlashcards: plan.features.aiFlashcardCredits === 999999 ? 'unlimited' : plan.features.aiFlashcardCredits,
+          aiQuizzes: plan.features.aiQuizCredits === 999999 ? 'unlimited' : plan.features.aiQuizCredits,
+          aiNotes: plan.features.aiNotesCredits === 999999 ? 'unlimited' : plan.features.aiNotesCredits,
+          aiAssistant: plan.features.aiAssistantCredits === 999999 ? 'unlimited' : plan.features.aiAssistantCredits
         },
+        // Include full plan data for editing
+        fullPlanData: {
+          price: plan.price,
+          features: plan.features,
+          selectedFeatures: plan.selectedFeatures || [],
+          visibility: plan.visibility,
+          trial: plan.trial
+        },
+        selectedFeatures: plan.selectedFeatures || [],
         isActive: plan.visibility.isActive,
         isPopular: plan.metadata.badge === 'Most Popular' || plan.metadata.badge === 'Best Value',
         stripePriceId: plan.metadata.stripePriceId,
@@ -601,7 +617,7 @@ export const getAllPlans = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const createPlan = async (req: AuthenticatedRequest, res: Response) => {
+export const createPlan = async (req: Request, res: Response) => {
   try {
     const frontendData = req.body;
     const admin = req.admin;
@@ -624,34 +640,16 @@ export const createPlan = async (req: AuthenticatedRequest, res: Response) => {
       },
       features: {
         maxDecks: frontendData.features.maxDecks,
-        maxCards: frontendData.features.maxCards,
-        maxAiGenerations: frontendData.features.maxAiGenerations,
-        maxStorage: frontendData.features.maxStorage,
-        prioritySupport: false, // Default value
-        advancedAnalytics: false, // Default value
-        customBranding: false, // Default value
-        apiAccess: false, // Default value
-        exportFeatures: false, // Default value
-        collaborativeDecks: false, // Default value
-        offlineAccess: true, // Default value
-        customCategories: false // Default value
-      },
-      limits: {
-        dailyAiGenerations: frontendData.limits.dailyAiGenerations,
-        monthlyAiGenerations: frontendData.limits.monthlyAiGenerations,
-        concurrentSessions: frontendData.limits.concurrentSessions,
-        fileUploadSize: frontendData.limits.fileUploadSize
-      },
-      trial: {
-        enabled: frontendData.trial.enabled,
-        durationDays: frontendData.trial.durationDays,
-        features: []
+        aiFlashcardCredits: frontendData.features.aiFlashcardCredits,
+        aiQuizCredits: frontendData.features.aiQuizCredits,
+        aiNotesCredits: frontendData.features.aiNotesCredits,
+        aiAssistantCredits: frontendData.features.aiAssistantCredits
       },
       selectedFeatures: frontendData.selectedFeatures || [],
-      visibility: {
-        isActive: frontendData.isActive,
-        isPublic: true
-      },
+        visibility: {
+          isActive: frontendData.isActive,
+          isPublic: frontendData.isPublic
+        },
       metadata: {
         color: '#3B82F6',
         icon: 'star',
@@ -721,7 +719,7 @@ function parseStorageString(storage: string): number {
   return unit === 'GB' ? value * 1024 : value;
 }
 
-export const updatePlan = async (req: AuthenticatedRequest, res: Response) => {
+export const updatePlan = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const frontendData = req.body;
@@ -745,34 +743,16 @@ export const updatePlan = async (req: AuthenticatedRequest, res: Response) => {
       },
       features: {
         maxDecks: frontendData.features.maxDecks,
-        maxCards: frontendData.features.maxCards,
-        maxAiGenerations: frontendData.features.maxAiGenerations,
-        maxStorage: frontendData.features.maxStorage,
-        prioritySupport: false, // Default value
-        advancedAnalytics: false, // Default value
-        customBranding: false, // Default value
-        apiAccess: false, // Default value
-        exportFeatures: false, // Default value
-        collaborativeDecks: false, // Default value
-        offlineAccess: true, // Default value
-        customCategories: false // Default value
-      },
-      limits: {
-        dailyAiGenerations: frontendData.limits.dailyAiGenerations,
-        monthlyAiGenerations: frontendData.limits.monthlyAiGenerations,
-        concurrentSessions: frontendData.limits.concurrentSessions,
-        fileUploadSize: frontendData.limits.fileUploadSize
-      },
-      trial: {
-        enabled: frontendData.trial.enabled,
-        durationDays: frontendData.trial.durationDays,
-        features: []
+        aiFlashcardCredits: frontendData.features.aiFlashcardCredits,
+        aiQuizCredits: frontendData.features.aiQuizCredits,
+        aiNotesCredits: frontendData.features.aiNotesCredits,
+        aiAssistantCredits: frontendData.features.aiAssistantCredits
       },
       selectedFeatures: frontendData.selectedFeatures || [],
-      visibility: {
-        isActive: frontendData.isActive,
-        isPublic: true
-      },
+        visibility: {
+          isActive: frontendData.isActive,
+          isPublic: frontendData.isPublic
+        },
       metadata: {
         color: '#3B82F6',
         icon: 'star',
@@ -830,7 +810,7 @@ export const updatePlan = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deletePlan = async (req: AuthenticatedRequest, res: Response) => {
+export const deletePlan = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -870,7 +850,7 @@ export const deletePlan = async (req: AuthenticatedRequest, res: Response) => {
 
 // Billing Management Controllers
 
-export const getSubscriptionOverview = async (req: AuthenticatedRequest, res: Response) => {
+export const getSubscriptionOverview = async (req: Request, res: Response) => {
   try {
     // Get basic subscription statistics from User model
     const [
@@ -1056,7 +1036,7 @@ export const getSubscriptionOverview = async (req: AuthenticatedRequest, res: Re
         user: {
           name: user.name,
           email: user.email,
-          avatar: user.avatar
+          avatar: (user as any).avatar || '/authors/default-avatar.jpg'
         },
         plan: {
           name: planDetails.name,
@@ -1098,7 +1078,7 @@ export const getSubscriptionOverview = async (req: AuthenticatedRequest, res: Re
 };
 
 // Get all transactions with filtering (based on user subscriptions)
-export const getAllTransactions = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllTransactions = async (req: Request, res: Response) => {
   try {
     const { 
       page = 1, 
@@ -1180,7 +1160,7 @@ export const getAllTransactions = async (req: AuthenticatedRequest, res: Respons
         // Extract the correct price based on interval
         let planPrice = 0;
         if (planDetails?.price) {
-          const interval = user.subscription.interval || 'monthly';
+          const interval = (user.subscription as any).interval || 'monthly';
           planPrice = interval === 'yearly' ? planDetails.price.yearly : planDetails.price.monthly;
         } else {
           // Fallback for legacy plans
@@ -1212,7 +1192,7 @@ export const getAllTransactions = async (req: AuthenticatedRequest, res: Respons
           },
           subscription: {
             plan: planName,
-            interval: user.subscription.interval || 'monthly'
+            interval: (user.subscription as any).interval || 'monthly'
           },
           amount: planPrice,
           currency: 'USD',
@@ -1224,8 +1204,8 @@ export const getAllTransactions = async (req: AuthenticatedRequest, res: Respons
           },
           stripeTransactionId: `txn_${user._id.toString().slice(-8)}`,
           failureReason: user.subscription.status === 'cancelled' ? 'cancelled_by_user' : null,
-          createdAt: user.subscription.createdAt?.toISOString() || user.createdAt.toISOString(),
-          processedAt: user.subscription.createdAt?.toISOString() || user.createdAt.toISOString()
+          createdAt: (user.subscription as any).createdAt?.toISOString() || user.createdAt.toISOString(),
+          processedAt: (user.subscription as any).createdAt?.toISOString() || user.createdAt.toISOString()
         };
       })
     );
@@ -1269,7 +1249,7 @@ function mapTransactionStatus(backendStatus: string): 'succeeded' | 'failed' | '
   }
 }
 
-export const getBillingOverview = async (req: AuthenticatedRequest, res: Response) => {
+export const getBillingOverview = async (req: Request, res: Response) => {
   try {
     const { dateRange = '30d' } = req.query;
 
@@ -1308,7 +1288,7 @@ export const getBillingOverview = async (req: AuthenticatedRequest, res: Respons
         userId: user._id,
         subscriptionStatus: user.subscription?.status,
         subscriptionPlan: user.subscription?.plan,
-        subscriptionInterval: user.subscription?.interval
+        subscriptionInterval: (user.subscription as any)?.interval
       });
 
       // Only count active subscriptions for revenue
@@ -1325,7 +1305,7 @@ export const getBillingOverview = async (req: AuthenticatedRequest, res: Respons
       if (mongoose.Types.ObjectId.isValid(user.subscription.plan)) {
         const planDetails = await SubscriptionPlan.findById(user.subscription.plan).lean();
         if (planDetails?.price) {
-          const interval = user.subscription.interval || 'monthly';
+          const interval = (user.subscription as any).interval || 'monthly';
           planPrice = interval === 'yearly' ? planDetails.price.yearly : planDetails.price.monthly;
         }
       } else {
@@ -1338,7 +1318,7 @@ export const getBillingOverview = async (req: AuthenticatedRequest, res: Respons
       totalRevenue += planPrice;
       
       // For MRR, convert yearly to monthly
-      if (user.subscription?.interval === 'yearly') {
+      if ((user.subscription as any)?.interval === 'yearly') {
         monthlyRecurringRevenue += planPrice / 12;
       } else {
         monthlyRecurringRevenue += planPrice;
@@ -1419,7 +1399,7 @@ export const getBillingOverview = async (req: AuthenticatedRequest, res: Respons
         // Extract the correct price based on interval
         let planPrice = 0;
         if (planDetails?.price) {
-          const interval = user.subscription.interval || 'monthly';
+          const interval = (user.subscription as any).interval || 'monthly';
           planPrice = interval === 'yearly' ? planDetails.price.yearly : planDetails.price.monthly;
         } else {
           // Fallback for legacy plans
@@ -1436,7 +1416,7 @@ export const getBillingOverview = async (req: AuthenticatedRequest, res: Respons
           },
           subscription: {
             plan: planName,
-            interval: user.subscription.interval || 'monthly'
+            interval: (user.subscription as any).interval || 'monthly'
           },
           amount: planPrice,
           currency: 'USD',
@@ -1448,8 +1428,8 @@ export const getBillingOverview = async (req: AuthenticatedRequest, res: Respons
           },
           stripeTransactionId: `txn_${user._id.toString().slice(-8)}`,
           failureReason: null,
-          createdAt: user.subscription.createdAt?.toISOString() || user.createdAt.toISOString(),
-          processedAt: user.subscription.createdAt?.toISOString() || user.createdAt.toISOString()
+          createdAt: (user.subscription as any).createdAt?.toISOString() || user.createdAt.toISOString(),
+          processedAt: (user.subscription as any).createdAt?.toISOString() || user.createdAt.toISOString()
         };
       })
     );
@@ -1488,7 +1468,7 @@ export const getBillingOverview = async (req: AuthenticatedRequest, res: Respons
   }
 };
 
-export const processRefund = async (req: AuthenticatedRequest, res: Response) => {
+export const processRefund = async (req: Request, res: Response) => {
   try {
     const { transactionId, amount, reason } = req.body;
     const admin = req.admin;
@@ -1594,7 +1574,7 @@ export const processRefund = async (req: AuthenticatedRequest, res: Response) =>
 };
 
 // Get available features for plan creation/editing
-export const getAvailableFeatures = async (req: AuthenticatedRequest, res: Response) => {
+export const getAvailableFeatures = async (req: Request, res: Response) => {
   try {
     const admin = req.admin;
 
@@ -1620,3 +1600,5 @@ export const getAvailableFeatures = async (req: AuthenticatedRequest, res: Respo
     });
   }
 };
+
+

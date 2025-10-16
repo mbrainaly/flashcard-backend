@@ -13,6 +13,13 @@ export interface ISubscriptionPlan extends Document {
     maxCards: number;
     maxAiGenerations: number;
     maxStorage: number; // in MB
+    // Feature-specific credit limits
+    aiFlashcardCredits: number;
+    aiQuizCredits: number;
+    aiNotesCredits: number;
+    aiAssistantCredits: number;
+    manualQuizCredits: number;
+    deckCredits: number;
     prioritySupport: boolean;
     advancedAnalytics: boolean;
     customBranding: boolean;
@@ -107,76 +114,29 @@ const SubscriptionPlanSchema: Schema = new Schema({
       required: true,
       min: 0
     },
-    maxCards: {
+    aiFlashcardCredits: {
       type: Number,
       required: true,
-      min: 0
+      min: 0,
+      default: 0
     },
-    maxAiGenerations: {
+    aiQuizCredits: {
       type: Number,
       required: true,
-      min: 0
+      min: 0,
+      default: 0
     },
-    maxStorage: {
+    aiNotesCredits: {
       type: Number,
       required: true,
-      min: 0
+      min: 0,
+      default: 0
     },
-    prioritySupport: {
-      type: Boolean,
-      default: false
-    },
-    advancedAnalytics: {
-      type: Boolean,
-      default: false
-    },
-    customBranding: {
-      type: Boolean,
-      default: false
-    },
-    apiAccess: {
-      type: Boolean,
-      default: false
-    },
-    exportFeatures: {
-      type: Boolean,
-      default: false
-    },
-    collaborativeDecks: {
-      type: Boolean,
-      default: false
-    },
-    offlineAccess: {
-      type: Boolean,
-      default: false
-    },
-    customCategories: {
-      type: Boolean,
-      default: false
-    }
-  },
-  limits: {
-    dailyAiGenerations: {
+    aiAssistantCredits: {
       type: Number,
       required: true,
-      min: 0
-    },
-    monthlyAiGenerations: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    concurrentSessions: {
-      type: Number,
-      required: true,
-      min: 1,
-      default: 1
-    },
-    fileUploadSize: {
-      type: Number,
-      required: true,
-      min: 1,
-      default: 10
+      min: 0,
+      default: 0
     }
   },
   trial: {
