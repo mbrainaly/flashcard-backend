@@ -1,156 +1,129 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from 'mongoose'
 
 export interface IContactSubmission extends Document {
-  name: string;
-  email: string;
-  subject?: string;
-  message: string;
-  phone?: string;
-  company?: string;
-  status: 'new' | 'read' | 'replied' | 'resolved' | 'spam';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  tags: string[];
+  firstName: string
+  lastName: string
+  email: string
+  phone?: string
+  message: string
+  status: 'new' | 'read' | 'replied' | 'resolved'
+  source: 'contact_page' | 'other'
+  ipAddress?: string
+  userAgent?: string
+  submittedAt: Date
+  readAt?: Date
+  repliedAt?: Date
+  resolvedAt?: Date
+  adminNotes?: string
   assignedTo?: {
-    adminId: mongoose.Types.ObjectId;
-    name: string;
-    email: string;
-  };
-  replies: {
-    adminId: mongoose.Types.ObjectId;
-    adminName: string;
-    message: string;
-    timestamp: Date;
-  }[];
-  metadata: {
-    ipAddress: string;
-    userAgent: string;
-    referrer?: string;
-    source: string; // 'contact_form', 'api', 'manual'
-  };
-  notes: {
-    adminId: mongoose.Types.ObjectId;
-    adminName: string;
-    note: string;
-    timestamp: Date;
-  }[];
-  createdAt: Date;
-  updatedAt: Date;
+    adminId: mongoose.Types.ObjectId
+    name: string
+    email: string
+  }
+  createdAt: Date
+  updatedAt: Date
 }
 
-const ContactSubmissionSchema: Schema = new Schema({
-  name: {
+const ContactSubmissionSchema = new Schema<IContactSubmission>({
+  firstName: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
+    maxlength: 100
+  },
+  lastName: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 100
   },
   email: {
     type: String,
     required: true,
     trim: true,
-    lowercase: true
+    lowercase: true,
+    maxlength: 255
   },
-  subject: {
+  phone: {
     type: String,
-    trim: true
+    trim: true,
+    maxlength: 20
   },
   message: {
     type: String,
     required: true,
-    trim: true
-  },
-  phone: {
-    type: String,
-    trim: true
-  },
-  company: {
-    type: String,
-    trim: true
+    trim: true,
+    maxlength: 5000
   },
   status: {
     type: String,
-    enum: ['new', 'read', 'replied', 'resolved', 'spam'],
+    enum: ['new', 'read', 'replied', 'resolved'],
     default: 'new'
   },
-  priority: {
+  source: {
     type: String,
-    enum: ['low', 'medium', 'high', 'urgent'],
-    default: 'medium'
+    enum: ['contact_page', 'other'],
+    default: 'contact_page'
   },
-  tags: [{
+  ipAddress: {
     type: String,
     trim: true
-  }],
+  },
+  userAgent: {
+    type: String,
+    trim: true
+  },
+  submittedAt: {
+    type: Date,
+    default: Date.now
+  },
+  readAt: {
+    type: Date
+  },
+  repliedAt: {
+    type: Date
+  },
+  resolvedAt: {
+    type: Date
+  },
+  adminNotes: {
+    type: String,
+    trim: true,
+    maxlength: 2000
+  },
   assignedTo: {
     adminId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: 'Admin'
     },
-    name: String,
-    email: String
-  },
-  replies: [{
-    adminId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Admin',
-      required: true
-    },
-    adminName: {
+    name: {
       type: String,
-      required: true
+      trim: true
     },
-    message: {
+    email: {
       type: String,
-      required: true
-    },
-    timestamp: {
-      type: Date,
-      default: Date.now
+      trim: true,
+      lowercase: true
     }
-  }],
-  metadata: {
-    ipAddress: {
-      type: String,
-      required: true
-    },
-    userAgent: {
-      type: String,
-      required: true
-    },
-    referrer: String,
-    source: {
-      type: String,
-      enum: ['contact_form', 'api', 'manual'],
-      default: 'contact_form'
-    }
-  },
-  notes: [{
-    adminId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Admin',
-      required: true
-    },
-    adminName: {
-      type: String,
-      required: true
-    },
-    note: {
-      type: String,
-      required: true
-    },
-    timestamp: {
-      type: Date,
-      default: Date.now
-    }
-  }]
+  }
 }, {
   timestamps: true
-});
+})
 
-// Indexes
-ContactSubmissionSchema.index({ status: 1 });
-ContactSubmissionSchema.index({ priority: 1 });
-ContactSubmissionSchema.index({ createdAt: -1 });
-ContactSubmissionSchema.index({ email: 1 });
-ContactSubmissionSchema.index({ 'assignedTo.adminId': 1 });
+// Indexes for better query performance
+ContactSubmissionSchema.index({ email: 1 })
+ContactSubmissionSchema.index({ status: 1 })
+ContactSubmissionSchema.index({ submittedAt: -1 })
+ContactSubmissionSchema.index({ 'assignedTo.adminId': 1 })
 
-export default mongoose.model<IContactSubmission>('ContactSubmission', ContactSubmissionSchema);
+// Virtual for full name
+ContactSubmissionSchema.virtual('fullName').get(function() {
+  return `${this.firstName} ${this.lastName}`
+})
+
+// Ensure virtual fields are serialized
+ContactSubmissionSchema.set('toJSON', {
+  virtuals: true
+})
+
+export default mongoose.model<IContactSubmission>('ContactSubmission', ContactSubmissionSchema)

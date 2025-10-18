@@ -44,7 +44,12 @@ export const createUser = async (req: Request, res: Response) => {
       subscription: {
         plan: subscriptionPlan,
         status: 'active',
-        credits: subscriptionPlan === 'pro' ? 200 : subscriptionPlan === 'team' ? 500 : 50
+        credits: {
+          aiFlashcards: 0,
+          aiQuizzes: 0,
+          aiNotes: 0,
+          aiAssistant: 0
+        }
       }
     });
 
@@ -396,13 +401,18 @@ export const updateUser = async (req: Request, res: Response) => {
         updateData.subscription = {
           ...updateData.subscription,
           plan: subscriptionPlan,
-          // Update credits based on plan
-          credits: subscriptionPlan === 'pro' ? 200 : subscriptionPlan === 'team' ? 500 : 50
+          // Keep existing credits structure - don't reset credits when changing plan
+          credits: updateData.subscription.credits || {
+            aiFlashcards: 0,
+            aiQuizzes: 0,
+            aiNotes: 0,
+            aiAssistant: 0
+          }
         };
       } else {
         // If no subscription object, use dot notation to update nested field
         updateData['subscription.plan'] = subscriptionPlan;
-        updateData['subscription.credits'] = subscriptionPlan === 'pro' ? 200 : subscriptionPlan === 'team' ? 500 : 50;
+        // Don't update credits when just changing plan - preserve existing usage
       }
       
       delete updateData.role; // Remove role from updateData as it's not a direct field

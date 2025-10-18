@@ -13,6 +13,8 @@ export interface IAdmin extends Document {
   lockUntil?: Date;
   twoFactorSecret?: string;
   twoFactorEnabled: boolean;
+  avatar?: string;
+  location?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -70,6 +72,8 @@ const adminSchema = new Schema<IAdmin>(
         'blogs.read', 'blogs.write', 'blogs.delete',
         // Page management
         'pages.read', 'pages.write',
+        // Queries management
+        'queries.read', 'queries.update', 'queries.delete',
         // System management
         'system.read', 'system.write'
       ]
@@ -95,6 +99,15 @@ const adminSchema = new Schema<IAdmin>(
     twoFactorEnabled: {
       type: Boolean,
       default: false
+    },
+    avatar: {
+      type: String,
+      trim: true
+    },
+    location: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Location cannot exceed 100 characters']
     }
   },
   {
@@ -134,6 +147,7 @@ adminSchema.pre('save', function (next) {
           'subscriptions.read', 'subscriptions.write',
           'blogs.read', 'blogs.write', 'blogs.delete',
           'pages.read', 'pages.write',
+          'queries.read', 'queries.update', 'queries.delete',
           'system.read', 'system.write'
         ];
         break;
@@ -144,7 +158,8 @@ adminSchema.pre('save', function (next) {
           'analytics.read',
           'subscriptions.read',
           'blogs.read', 'blogs.write', 'blogs.delete',
-          'pages.read', 'pages.write'
+          'pages.read', 'pages.write',
+          'queries.read', 'queries.update', 'queries.delete'
         ];
         break;
       case 'moderator':

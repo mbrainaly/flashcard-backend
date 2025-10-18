@@ -21,6 +21,11 @@ import adminContentRoutes from './routes/admin/admin.content.routes';
 import adminAnalyticsRoutes from './routes/admin/admin.analytics.routes';
 import adminUsersRoutes from './routes/admin/admin.users.routes';
 import adminSettingsRoutes from './routes/admin/admin.settings.routes';
+import adminFooterRoutes from './routes/admin/admin.footer.routes';
+import adminQueriesRoutes from './routes/admin/admin.queries.routes'
+import adminProfileRoutes from './routes/admin/admin.profile.routes';
+import footerRoutes from './routes/footer.routes';
+import contactRoutes from './routes/contact.routes';
 
 const app = express();
 
@@ -99,6 +104,9 @@ app.use('/api/admin', adminSubscriptionsRoutes);
 app.use('/api/admin', adminContentRoutes);
 app.use('/api/admin', adminAnalyticsRoutes);
 app.use('/api/admin', adminUsersRoutes);
+app.use('/api/admin', adminFooterRoutes);
+app.use('/api/admin/queries', adminQueriesRoutes);
+app.use('/api/admin/profile', adminProfileRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));
@@ -126,6 +134,8 @@ app.use('/api/study-sessions', studySessionRoutes);
 app.use('/api/user', userCreditsRoutes);
 app.use('/api/blog', blogRoutes);
 app.use('/api/pages', pagesRoutes);
+app.use('/api', footerRoutes);
+app.use('/api', contactRoutes);
 
 // Health check endpoint for Vercel
 app.get('/api/health', (req, res) => {
