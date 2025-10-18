@@ -335,7 +335,7 @@ export const getPlans = async (req: Request, res: Response): Promise<void> => {
           `${plan.features.aiNotesCredits === 999999 ? 'Unlimited' : plan.features.aiNotesCredits} AI notes credits`,
           `${plan.features.aiAssistantCredits === 999999 ? 'Unlimited' : plan.features.aiAssistantCredits} AI assistant credits`
         ].filter(Boolean),
-        isPopular: plan.metadata?.isPopular || false
+        isPopular: plan.metadata?.badge?.toLowerCase().includes('popular') || false
       }));
 
       res.status(200).json({ success: true, plans });
