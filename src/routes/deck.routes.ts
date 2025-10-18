@@ -8,6 +8,11 @@ import {
   getPublicDecks,
   searchDecks,
 } from '../controllers/deck.controller';
+import {
+  getCards,
+  createCard,
+  getDueCards,
+} from '../controllers/card.controller';
 import { protect } from '../middleware/auth';
 
 const router = express.Router();
@@ -28,5 +33,12 @@ router.route('/:id')
   .get(getDeck)
   .put(updateDeck)
   .delete(deleteDeck);
+
+// Card routes for a specific deck
+router.route('/:deckId/cards')
+  .get(getCards)
+  .post(createCard);
+
+router.get('/:deckId/cards/due', getDueCards);
 
 export default router; 
