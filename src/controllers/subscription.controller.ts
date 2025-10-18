@@ -318,7 +318,9 @@ export const getPlans = async (req: Request, res: Response): Promise<void> => {
       const plans = subscriptionPlans.map(plan => ({
         id: plan._id.toString(),
         name: plan.name,
-        price: plan.price.monthly,
+        price: plan.price.yearly && plan.price.yearly > 0 
+          ? { monthly: plan.price.monthly, yearly: plan.price.yearly }
+          : plan.price.monthly,
         monthlyCredits: plan.features.aiFlashcardCredits || 0,
         allowDocuments: true, // All plans allow documents
         allowYoutubeAnalyze: true, // All plans allow YouTube analysis
@@ -332,7 +334,8 @@ export const getPlans = async (req: Request, res: Response): Promise<void> => {
           `${plan.features.aiQuizCredits === 999999 ? 'Unlimited' : plan.features.aiQuizCredits} AI quiz credits`,
           `${plan.features.aiNotesCredits === 999999 ? 'Unlimited' : plan.features.aiNotesCredits} AI notes credits`,
           `${plan.features.aiAssistantCredits === 999999 ? 'Unlimited' : plan.features.aiAssistantCredits} AI assistant credits`
-        ].filter(Boolean)
+        ].filter(Boolean),
+        isPopular: plan.metadata?.isPopular || false
       }));
 
       res.status(200).json({ success: true, plans });
