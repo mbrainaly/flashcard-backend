@@ -656,9 +656,13 @@ export const explainConcept = async (req: Request, res: Response): Promise<void>
   try {
     // Plan gating for AI Study Assistant
     const user = await User.findById(req.user._id)
-    const planId = (user?.subscription?.plan || 'basic') as 'basic' | 'pro' | 'team'
-    const rules = PLAN_RULES[planId]
-    if (!rules.allowAIStudyAssistant) {
+    const planId = user?.subscription?.plan || 'basic'
+    console.log('Concept explanation - User plan ID:', planId, 'User subscription:', user?.subscription)
+    
+    const rules = await getPlanRulesForId(planId)
+    console.log('Concept explanation - Plan rules:', rules)
+    
+    if (!rules || !rules.allowAIStudyAssistant) {
       res.status(403).json({ success: false, message: 'Your plan does not include AI Study Assistant' })
       return
     }
