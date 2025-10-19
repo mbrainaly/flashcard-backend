@@ -492,10 +492,60 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
       response_format: { type: 'json_object' },
     });
 
-    const quiz = completion.choices[0].message.content 
+    const rawQuiz = completion.choices[0].message.content 
       ? JSON.parse(completion.choices[0].message.content) 
       : { error: "No content returned" };
-    res.status(200).json(quiz);
+
+    // Normalize questions to match frontend expectations (same logic as quiz.controller.ts)
+    if (rawQuiz.questions && Array.isArray(rawQuiz.questions)) {
+      const normalizedQuestions = rawQuiz.questions.map((q: any) => {
+        const rawType = (q.type || '').toString().toLowerCase().replace(/\s+/g, '-').replace('true/false', 'true-false')
+        const type: 'multiple-choice' | 'true-false' | 'short-answer' =
+          rawType === 'true-false' ? 'true-false' : rawType === 'short-answer' ? 'short-answer' : 'multiple-choice'
+
+        if (type === 'true-false') {
+          const correct = typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex :
+            (typeof q.correctAnswer === 'number' ? q.correctAnswer : (String(q.answer || '').toLowerCase().startsWith('t') ? 0 : 1))
+          return {
+            question: String(q.question || 'Untitled question'),
+            options: ['True', 'False'],
+            correctOptionIndex: correct === 0 ? 0 : 1,
+            explanation: String(q.explanation || ''),
+            type,
+            difficulty: ['beginner','intermediate','advanced'].includes((q.difficulty||'').toString()) ? q.difficulty : 'intermediate',
+          }
+        }
+
+        if (type === 'short-answer') {
+          const answer = String(q.answer || (Array.isArray(q.options) && q.options.length > 0 ? q.options[0] : '')).trim()
+          return {
+            question: String(q.question || 'Untitled question'),
+            options: [answer],
+            correctOptionIndex: 0,
+            explanation: String(q.explanation || ''),
+            type,
+            difficulty: ['beginner','intermediate','advanced'].includes((q.difficulty||'').toString()) ? q.difficulty : 'intermediate',
+          }
+        }
+
+        // multiple-choice default
+        const options = Array.isArray(q.options) ? q.options.map((o: any) => String(o ?? '')) : []
+        const nonEmptyOptions = options.filter((o: string) => o.trim() !== '')
+        return {
+          question: String(q.question || 'Untitled question'),
+          options: nonEmptyOptions.length >= 2 ? nonEmptyOptions : ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
+          correctOptionIndex: typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex :
+            (typeof q.correctAnswer === 'number' ? q.correctAnswer : 0),
+          explanation: String(q.explanation || ''),
+          type,
+          difficulty: ['beginner','intermediate','advanced'].includes((q.difficulty||'').toString()) ? q.difficulty : 'intermediate',
+        }
+      })
+
+      rawQuiz.questions = normalizedQuestions
+    }
+
+    res.status(200).json(rawQuiz);
 
     // Increment usage counter after success
     await User.findByIdAndUpdate(req.user._id, {

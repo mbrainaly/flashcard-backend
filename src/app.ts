@@ -53,7 +53,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // CORS configuration with increased preflight timeout
 const corsOptions = {
-  origin: ['https://aiflashcard.net', 'https://www.aiflashcard.net', process.env.FRONTEND_URL || 'http://localhost:3000'],
+  origin: true, // Temporarily allow all origins for debugging
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With', 'Accept', 'Accept-Version', 'Content-Length', 'Content-MD5', 'Date', 'X-Api-Version'],
   credentials: true,
@@ -64,6 +64,21 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
+
+// Increase timeout for long-running operations (like AI processing)
+app.use((req, res, next) => {
+  // Set timeout to 10 minutes for AI-related endpoints
+  if (req.path.includes('/api/notes/generate') || 
+      req.path.includes('/api/ai/') || 
+      req.path.includes('/api/quizzes/generate')) {
+    req.setTimeout(600000); // 10 minutes
+    res.setTimeout(600000); // 10 minutes
+  } else {
+    req.setTimeout(120000); // 2 minutes for other endpoints
+    res.setTimeout(120000); // 2 minutes for other endpoints
+  }
+  next();
+});
 
 // Configure body parser with larger limits
 app.use(express.raw({ 

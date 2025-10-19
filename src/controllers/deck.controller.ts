@@ -47,7 +47,34 @@ export const getDecks = async (req: Request, res: Response): Promise<void> => {
     const decks = await Deck.find({ owner: req.user._id })
       .sort({ updatedAt: -1 });
 
-    res.status(200).json(decks);
+    // Calculate live study progress for each deck
+    const decksWithProgress = await Promise.all(
+      decks.map(async (deck) => {
+        // Get cards count by status for this deck
+        const cardStats = await Card.aggregate([
+          { $match: { deck: deck._id } },
+          { $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }}
+        ]);
+
+        // Calculate progress
+        const stats = cardStats.reduce((acc, curr) => {
+          acc[curr._id] = curr.count;
+          return acc;
+        }, { mastered: 0, learning: 0, new: 0 });
+
+        // Update the deck object with live progress
+        const deckObj = deck.toObject();
+        deckObj.studyProgress = stats;
+        deckObj.totalCards = stats.mastered + stats.learning + stats.new;
+        
+        return deckObj;
+      })
+    );
+
+    res.status(200).json(decksWithProgress);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching decks' });
   }
