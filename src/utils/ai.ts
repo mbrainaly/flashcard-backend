@@ -152,7 +152,13 @@ export async function analyzeContent(content: string) {
 3. Recommended difficulty level
 4. Estimated number of flashcards needed
 
-Return the analysis as a JSON object.
+Return the analysis as a JSON object with these exact field names:
+{
+  "keyConcepts": ["concept1", "concept2"],
+  "suggestedTopics": ["topic1", "topic2"],
+  "recommendedDifficulty": "beginner|intermediate|advanced",
+  "estimatedCards": number
+}
 
 Content: ${content}`;
 
