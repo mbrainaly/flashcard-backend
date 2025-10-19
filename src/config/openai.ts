@@ -17,8 +17,7 @@ export const createGPT5Response = async (prompt: string, reasoning: 'low' | 'med
     const result = await openaiClient.responses.create({
       model: "gpt-5",
       input: prompt,
-      reasoning: { effort: reasoning },
-      text: { verbosity: verbosity },
+      reasoning: { effort: reasoning }
     });
     
     return {
