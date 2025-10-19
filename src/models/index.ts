@@ -4,4 +4,5 @@ export { default as Deck } from './Deck';
 export { default as Card } from './Card';
 export { default as Quiz } from './Quiz'; 
 export { default as Plan } from './Plan';
+export { default as SubscriptionPlan } from './SubscriptionPlan';
 export { default as StudySession } from './StudySession';
