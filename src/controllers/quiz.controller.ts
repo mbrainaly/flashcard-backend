@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import openaiClient from '../config/openai';
+import openaiClient, { createGPT5Response } from '../config/openai';
 import User from '../models/User';
 import { PLAN_RULES, currentPeriodKey } from '../utils/plan';
 import { getPlanRulesForId } from '../utils/getPlanRules'
@@ -463,37 +463,29 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
 
     console.log('Found note:', note.title);
 
-    // Generate quiz using OpenAI
-    const response = await openaiClient.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert quiz creator. Create a quiz based on the provided notes. 
-          Generate ${questionCount} multiple-choice questions. For each question:
-          1. Create a clear, specific question
-          2. Provide 4 options, with only one correct answer
-          3. Include a brief explanation for the correct answer
-          Format the response as a JSON object with a questions array:
-          {
-            "questions": [
-              {
-                "question": "the question text",
-                "options": ["option1", "option2", "option3", "option4"],
-                "correctAnswer": 0,
-                "explanation": "explanation for the correct answer"
-              }
-            ]
-          }`
-        },
-        {
-          role: 'user',
-          content: `Create a quiz based on these notes:\n\n${note.content}`
-        }
-      ],
-      temperature: 0.7,
-      response_format: { type: "json_object" }
-    });
+    // Generate quiz using GPT-5
+    const quizPrompt = `You are an expert quiz creator. Create a quiz based on the provided notes. 
+Generate ${questionCount} multiple-choice questions. For each question:
+1. Create a clear, specific question
+2. Provide 4 options, with only one correct answer
+3. Include a brief explanation for the correct answer
+Format the response as a JSON object with a questions array:
+{
+  "questions": [
+    {
+      "question": "the question text",
+      "options": ["option1", "option2", "option3", "option4"],
+      "correctAnswer": 0,
+      "explanation": "explanation for the correct answer"
+    }
+  ]
+}
+
+Create a quiz based on these notes:
+
+${note.content}`;
+
+    const response = await createGPT5Response(quizPrompt, 'high', 'medium');
 
     console.log('OpenAI response received');
 

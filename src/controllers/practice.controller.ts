@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import openaiClient from '../config/openai'
+import openaiClient, { createGPT5Response } from '../config/openai'
 import { deductFeatureCredits, refundFeatureCredits } from '../utils/dynamicCredits'
 import { CREDIT_COSTS } from '../config/credits'
 import User from '../models/User'
@@ -28,12 +28,7 @@ export const generateProblems = async (req: Request, res: Response): Promise<voi
       return
     }
 
-    const response = await openaiClient.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert tutor specializing in generating practice problems. Create ${numProblems} ${difficulty} level problems about ${topic} in ${subject}.
+    const prompt = `You are an expert tutor specializing in generating practice problems. Create ${numProblems} ${difficulty} level problems about ${topic} in ${subject}.
 
 For each problem:
 1. Create a clear, concise question
@@ -57,16 +52,11 @@ Return the problems as a JSON array with this structure:
       "topic": string
     }
   ]
-}`
-        },
-        {
-          role: 'user',
-          content: `Generate ${numProblems} ${difficulty} practice problems about ${topic} in ${subject}.`
-        }
-      ],
-      temperature: 0.7,
-      response_format: { type: "json_object" }
-    })
+}
+
+Generate ${numProblems} ${difficulty} practice problems about ${topic} in ${subject}.`;
+
+    const response = await createGPT5Response(prompt, 'high', 'medium')
 
     const problems = JSON.parse(response.choices[0].message.content || '{"problems": []}').problems
 
@@ -108,12 +98,7 @@ export const checkAnswer = async (req: Request, res: Response): Promise<void> =>
       return
     }
 
-    const response = await openaiClient.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert tutor evaluating student answers. Analyze the following:
+    const evaluationPrompt = `You are an expert tutor evaluating student answers. Analyze the following:
 
 Correct answer: "${correctAnswer}"
 Student's answer: "${userAnswer}"
@@ -129,18 +114,13 @@ Return your evaluation as a JSON object with this structure:
   "isCorrect": boolean,
   "explanation": string,
   "nextSteps": string[] (if incorrect)
-}`
-        },
-        {
-          role: 'user',
-          content: `Evaluate this answer:
+}
+
+Evaluate this answer:
 Correct: "${correctAnswer}"
-Student: "${userAnswer}"`
-        }
-      ],
-      temperature: 0.7,
-      response_format: { type: "json_object" }
-    })
+Student: "${userAnswer}"`;
+
+    const response = await createGPT5Response(evaluationPrompt, 'high', 'medium')
 
     const evaluation = JSON.parse(response.choices[0].message.content || '{}')
 

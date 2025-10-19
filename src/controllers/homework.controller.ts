@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import openaiClient from '../config/openai'
+import openaiClient, { createGPT5Response } from '../config/openai'
 import { extractTextFromFile } from '../utils/fileProcessing'
 import { deductFeatureCredits, refundFeatureCredits } from '../utils/dynamicCredits'
 import { CREDIT_COSTS } from '../config/credits'
@@ -44,12 +44,7 @@ export const getHomeworkHelp = async (req: Request, res: Response): Promise<void
       }
     }
 
-    const response = await openaiClient.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert tutor helping students with their homework. You specialize in ${subject}.
+    const homeworkPrompt = `You are an expert tutor helping students with their homework. You specialize in ${subject}.
           
 Provide detailed, step-by-step solutions that:
 1. Break down complex problems into manageable parts
@@ -67,16 +62,12 @@ Format your response in clear HTML with:
 - Examples in <blockquote> tags
 - References or resources in <aside> tags
 
-Keep explanations clear and educational, encouraging understanding rather than just providing answers.`
-        },
-        {
-          role: 'user',
-          content: `Question: ${question}
-${fileContent ? `\nAdditional Context:\n${fileContent}` : ''}`
-        }
-      ],
-      temperature: 0.7,
-    })
+Keep explanations clear and educational, encouraging understanding rather than just providing answers.
+
+Question: ${question}
+${fileContent ? `\nAdditional Context:\n${fileContent}` : ''}`;
+
+    const response = await createGPT5Response(homeworkPrompt, 'high', 'high')
 
     const answer = response.choices[0].message.content || ''
 

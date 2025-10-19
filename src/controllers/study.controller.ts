@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import OpenAI from 'openai'
+import { createGPT5Response } from '../config/openai'
 import { z } from 'zod'
 
 const openai = new OpenAI({
@@ -47,20 +48,11 @@ export const evaluateAnswer = async (req: Request, res: Response): Promise<void>
       }
     `
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a helpful AI tutor that provides detailed feedback on student answers.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    })
+    const studyPrompt = `You are a helpful AI tutor that provides detailed feedback on student answers.
+
+${prompt}`;
+
+    const completion = await createGPT5Response(studyPrompt, 'high', 'medium')
 
     const feedback = completion.choices[0].message.content 
       ? JSON.parse(completion.choices[0].message.content) 
@@ -100,20 +92,11 @@ export const generateQuizQuestion = async (req: Request, res: Response): Promise
       The correct answer should be randomly placed among the options.
     `
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a helpful AI tutor that generates engaging multiple choice questions.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    })
+    const quizPrompt = `You are a helpful AI tutor that generates engaging multiple choice questions.
+
+${prompt}`;
+
+    const completion = await createGPT5Response(quizPrompt, 'high', 'medium')
 
     const quizQuestion = completion.choices[0].message.content 
       ? JSON.parse(completion.choices[0].message.content) 

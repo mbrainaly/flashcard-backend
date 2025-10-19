@@ -3,8 +3,7 @@ import { generateFlashcards, analyzeContent } from '../utils/ai';
 import Deck from '../models/Deck';
 import Card from '../models/Card';
 import { initializeCard } from '../utils/spacedRepetition';
-import openai from '../config/openai';
-import openaiClient from '../config/openai';
+import openaiClient, { createGPT5Response } from '../config/openai';
 import { supadata } from '../config/supadata';
 import User from '../models/User';
 import { PLAN_RULES, currentPeriodKey } from '../utils/plan';
@@ -202,20 +201,11 @@ export const evaluateAnswer = async (req: Request, res: Response): Promise<void>
       }
     `;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a helpful AI tutor that provides detailed feedback on student answers.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
+    const feedbackPrompt = `You are a helpful AI tutor that provides detailed feedback on student answers.
+
+${prompt}`;
+
+    const completion = await createGPT5Response(feedbackPrompt, 'high', 'medium');
 
     const evaluation = completion.choices[0].message.content 
       ? JSON.parse(completion.choices[0].message.content) 
@@ -258,20 +248,11 @@ export const generateQuizQuestion = async (req: Request, res: Response): Promise
       - Not obviously wrong or silly
     `;
 
-    const completion = await openaiClient.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a helpful AI tutor that generates engaging multiple choice questions.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
+    const validationPrompt = `You are a helpful AI tutor that generates engaging multiple choice questions.
+
+${prompt}`;
+
+    const completion = await createGPT5Response(validationPrompt, 'high', 'medium');
 
     const quizQuestion = completion.choices[0].message.content 
       ? JSON.parse(completion.choices[0].message.content) 
@@ -302,7 +283,7 @@ Answer: ${back}
 
 Provide a clear, concise explanation that helps understand why this answer is correct and how it relates to the question. Include any relevant context or concepts that would help someone understand this better.`
 
-    const response = await openai.chat.completions.create({
+    const response = await openaiClient.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         {
@@ -373,20 +354,11 @@ export const analyzeQuizContent = async (req: Request, res: Response): Promise<v
       - Estimate questions based on content depth
     `;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert content analyzer specializing in educational assessment.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
+    const analysisPrompt = `You are an expert content analyzer specializing in educational assessment.
+
+${prompt}`;
+
+    const completion = await createGPT5Response(analysisPrompt, 'high', 'medium');
 
     const analysis = completion.choices[0].message.content 
       ? JSON.parse(completion.choices[0].message.content) 
@@ -501,7 +473,7 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
       }
     `;
 
-    const completion = await openai.chat.completions.create({
+    const completion = await openaiClient.chat.completions.create({
       model: 'gpt-4-turbo-preview',
       messages: [
         {

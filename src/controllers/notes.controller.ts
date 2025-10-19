@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { YoutubeTranscript } from 'youtube-transcript'
-import openaiClient from '../config/openai'
+import openaiClient, { createGPT5Response } from '../config/openai'
 import User from '../models/User'
 import { PLAN_RULES, currentPeriodKey } from '../utils/plan'
 import { getPlanRulesForId } from '../utils/getPlanRules'
@@ -224,12 +224,7 @@ export const getHomeworkHelp = async (req: Request, res: Response): Promise<void
       }
     }
 
-    const response = await openaiClient.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert tutor helping students with their homework. You specialize in ${subject}.
+    const notesPrompt = `You are an expert tutor helping students with their homework. You specialize in ${subject}.
           
 Provide detailed, step-by-step solutions that:
 1. Break down complex problems into manageable parts
@@ -247,16 +242,12 @@ Format your response in clear HTML with:
 - Examples in <blockquote> tags
 - References or resources in <aside> tags
 
-Keep explanations clear and educational, encouraging understanding rather than just providing answers.`
-        },
-        {
-          role: 'user',
-          content: `Question: ${question}
-${fileContent ? `\nAdditional Context:\n${fileContent}` : ''}`
-        }
-      ],
-      temperature: 0.7,
-    })
+Keep explanations clear and educational, encouraging understanding rather than just providing answers.
+
+Question: ${question}
+${fileContent ? `\nAdditional Context:\n${fileContent}` : ''}`;
+
+    const response = await createGPT5Response(notesPrompt, 'high', 'high')
 
     const answer = response.choices[0].message.content || ''
 
@@ -368,14 +359,9 @@ Format the entire response in clean HTML without any markdown or other formattin
         prompt = `Create organized study notes from the following:\n\n${content}`;
     }
 
-    console.log('Sending prompt to OpenAI');
+    console.log('Sending prompt to GPT-5');
 
-    const response = await openaiClient.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert note-taker and educator. Create well-structured study notes using HTML formatting.
+    const notesGenerationPrompt = `You are an expert note-taker and educator. Create well-structured study notes using HTML formatting.
           
 Your response must follow these strict rules:
 1. Start with an <h1> tag containing a descriptive title
@@ -393,16 +379,11 @@ Your response must follow these strict rules:
 7. Ensure all HTML tags are properly closed
 8. Use only the specified HTML elements - no other tags allowed
 9. For video content, include timestamps in [brackets] to reference specific parts
-10. Create a clear hierarchy of information with main concepts and supporting details`
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-    });
+10. Create a clear hierarchy of information with main concepts and supporting details
+
+${prompt}`;
+
+    const response = await createGPT5Response(notesGenerationPrompt, 'high', 'high');
 
     let generatedNotes = response.choices[0].message.content || '';
 
