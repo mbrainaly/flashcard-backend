@@ -206,10 +206,10 @@ export const deleteQuiz = async (req: Request, res: Response): Promise<void> => 
 export const submitQuizAttempt = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { answers, timeSpentPerQuestion } = req.body;
+    const { answers, shortAnswerTexts, timeSpentPerQuestion } = req.body;
     const userId = req.user._id;
 
-    console.log('Submitting quiz attempt:', { quizId: id, userId, answers, timeSpentPerQuestion });
+    console.log('Submitting quiz attempt:', { quizId: id, userId, answers, shortAnswerTexts, timeSpentPerQuestion });
 
     if (!Array.isArray(answers)) {
       res.status(400).json({
@@ -233,18 +233,70 @@ export const submitQuizAttempt = async (req: Request, res: Response): Promise<vo
       return;
     }
 
+    // Helper function to evaluate short-answer questions
+    const evaluateShortAnswer = (userAnswer: string, correctAnswer: string): boolean => {
+      if (!userAnswer || !correctAnswer) return false;
+      
+      const normalize = (text: string) => text.toLowerCase().trim().replace(/[^\w\s]/g, '');
+      const normalizedUser = normalize(userAnswer);
+      const normalizedCorrect = normalize(correctAnswer);
+      
+      // Exact match
+      if (normalizedUser === normalizedCorrect) return true;
+      
+      // Check if user answer contains the correct answer or vice versa
+      if (normalizedUser.includes(normalizedCorrect) || normalizedCorrect.includes(normalizedUser)) {
+        return true;
+      }
+      
+      // Check for similar words (simple keyword matching)
+      const userWords = normalizedUser.split(/\s+/);
+      const correctWords = normalizedCorrect.split(/\s+/);
+      
+      // If correct answer is a single word, check if it's in user's answer
+      if (correctWords.length === 1 && userWords.includes(correctWords[0])) {
+        return true;
+      }
+      
+      // For multi-word answers, check if most key words match
+      if (correctWords.length > 1) {
+        const matchingWords = correctWords.filter(word => userWords.includes(word));
+        return matchingWords.length >= Math.ceil(correctWords.length * 0.6); // 60% match threshold
+      }
+      
+      return false;
+    };
+
     // Calculate score and prepare detailed answers
     let score = 0;
     const correctAnswers = quiz.questions.map(q => q.correctOptionIndex);
     const explanations = quiz.questions.map(q => q.explanation || '');
-    const detailedAnswers = answers.map((answer, index) => ({
-      isCorrect: answer === quiz.questions[index].correctOptionIndex,
-      timeTaken: timeSpentPerQuestion?.[index] || 0,
-      questionIndex: index,
-      selectedAnswer: answer,
-      correctAnswer: quiz.questions[index].correctOptionIndex,
-      explanation: quiz.questions[index].explanation || ''
-    }));
+    const detailedAnswers = answers.map((answer, index) => {
+      const question = quiz.questions[index];
+      let isCorrect = false;
+      
+      if (question.type === 'short-answer') {
+        // For short-answer questions, compare the actual text
+        const userText = shortAnswerTexts?.[index] || '';
+        const correctText = question.options[0] || ''; // Correct answer is stored in options[0]
+        isCorrect = evaluateShortAnswer(userText, correctText);
+        console.log(`Short-answer evaluation: "${userText}" vs "${correctText}" = ${isCorrect}`);
+      } else {
+        // For multiple-choice and true-false, compare indices
+        isCorrect = answer === question.correctOptionIndex;
+      }
+      
+      return {
+        isCorrect,
+        timeTaken: timeSpentPerQuestion?.[index] || 0,
+        questionIndex: index,
+        selectedAnswer: answer,
+        userText: shortAnswerTexts?.[index] || null, // Include user's text for short-answer
+        correctAnswer: question.correctOptionIndex,
+        correctText: question.type === 'short-answer' ? question.options[0] : null, // Include correct text for short-answer
+        explanation: question.explanation || ''
+      };
+    });
 
     score = detailedAnswers.filter(a => a.isCorrect).length;
     const totalTimeSpent = timeSpentPerQuestion?.reduce((sum: number, time: number) => sum + time, 0) || 0;
@@ -269,36 +321,40 @@ export const submitQuizAttempt = async (req: Request, res: Response): Promise<vo
       { $push: { attempts: attempt } }
     );
 
-    // Create a study session for this quiz attempt
-    try {
-      await StudySession.create({
-        userId,
-        deckId: quiz.deckId || null, // Use deckId if available
-        sessionType: 'quiz',
-        startTime: new Date(Date.now() - totalTimeSpent * 1000), // Approximate start time
-        endTime: new Date(),
-        duration: totalTimeSpent,
-        cardsStudied: quiz.questions.length,
-        correctAnswers: score,
-        totalAnswers: quiz.questions.length,
-        accuracy: (score / quiz.questions.length) * 100,
-        isCompleted: true,
-        studyMode: {
-          cardOrder: 'sequential',
-          cardDirection: 'front-to-back',
-          showProgress: true
-        },
-        performance: {
-          easyCards: 0,
-          mediumCards: 0,
-          hardCards: 0,
-          skippedCards: 0
-        }
-      });
-      console.log('Study session created for quiz attempt');
-    } catch (sessionError) {
-      console.error('Failed to create study session for quiz:', sessionError);
-      // Don't fail the quiz submission if study session creation fails
+    // Create a study session for this quiz attempt (only for deck-based quizzes)
+    if (quiz.deckId) {
+      try {
+        await StudySession.create({
+          userId,
+          deckId: quiz.deckId,
+          sessionType: 'quiz',
+          startTime: new Date(Date.now() - totalTimeSpent * 1000), // Approximate start time
+          endTime: new Date(),
+          duration: totalTimeSpent,
+          cardsStudied: quiz.questions.length,
+          correctAnswers: score,
+          totalAnswers: quiz.questions.length,
+          accuracy: (score / quiz.questions.length) * 100,
+          isCompleted: true,
+          studyMode: {
+            cardOrder: 'sequential',
+            cardDirection: 'front-to-back',
+            showProgress: true
+          },
+          performance: {
+            easyCards: 0,
+            mediumCards: 0,
+            hardCards: 0,
+            skippedCards: 0
+          }
+        });
+        console.log('Study session created for deck-based quiz attempt');
+      } catch (sessionError) {
+        console.error('Failed to create study session for quiz:', sessionError);
+        // Don't fail the quiz submission if study session creation fails
+      }
+    } else {
+      console.log('Skipping study session creation for note-based quiz (no deckId)');
     }
 
     console.log('Quiz attempt submitted successfully:', {

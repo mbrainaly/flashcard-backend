@@ -446,17 +446,22 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
 
       ${resolvedContent}
 
-      Requirements:
+      CRITICAL REQUIREMENTS:
       - Overall difficulty level: ${difficulty}
-      - Allowed question types: ${questionTypes.join(', ')}
-      - Distribute questions across the allowed types (balanced if multiple)
-      - Each question should have:
-        * Clear and concise wording
-        * Brief explanation of the correct answer
-      - Type-specific formatting:
-        * multiple-choice: include "options" (array of 4 strings) and "correctOptionIndex" (0-3)
-        * true-false: set "options" to ["True", "False"] and "correctOptionIndex" (0 for True, 1 for False)
-        * short-answer: include "answer" (string). You may omit "options"; if present, include only the correct answer as the first element
+      - ONLY generate questions of these types: ${questionTypes.join(', ')}
+      - ${questionTypes.length === 1 ? `ALL ${numberOfQuestions} questions MUST be of type "${questionTypes[0]}"` : `Distribute questions evenly across: ${questionTypes.join(', ')}`}
+      - DO NOT generate any other question types beyond: ${questionTypes.join(', ')}
+      
+      Each question should have:
+      - Clear and concise wording
+      - Brief explanation of the correct answer
+      
+      Type-specific formatting (FOLLOW EXACTLY):
+      - multiple-choice: include "options" (array of 4 strings) and "correctOptionIndex" (0-3)
+      - true-false: set "options" to ["True", "False"] and "correctOptionIndex" (0 for True, 1 for False)
+      - short-answer: include "answer" (string) and set "options" to [answer] and "correctOptionIndex" to 0
+      
+      Additional requirements:
       - Questions should cover different aspects of the content
       - Distribute difficulty evenly
       - Avoid repetitive or overlapping questions
@@ -466,11 +471,11 @@ export const generateQuiz = async (req: Request, res: Response): Promise<void> =
         "questions": [
           {
             "question": string,
-            "options": string[] | [],
-            "correctOptionIndex": number | null,
+            "options": string[],
+            "correctOptionIndex": number,
             "answer": string | null,
             "explanation": string,
-            "type": "multiple-choice" | "true-false" | "short-answer",
+            "type": "${questionTypes.length === 1 ? questionTypes[0] : 'multiple-choice | true-false | short-answer'}",
             "difficulty": "beginner" | "intermediate" | "advanced"
           }
         ]
