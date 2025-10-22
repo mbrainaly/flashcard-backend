@@ -11,6 +11,13 @@ export const createCard = async (req: Request, res: Response): Promise<void> => 
   try {
     const { deckId } = req.params;
     const { front, back, hints, examples, tags } = req.body;
+    
+    // Debug logging
+    console.log('Card creation request body:', req.body);
+    console.log('Request headers:', req.headers);
+    console.log('Has file:', !!req.file);
+    console.log('Front value:', front, 'type:', typeof front);
+    console.log('Back value:', back, 'type:', typeof back);
 
     // Check if deck exists and user has access
     const deck = await Deck.findById(deckId);
@@ -36,7 +43,19 @@ export const createCard = async (req: Request, res: Response): Promise<void> => 
     }
 
     // Handle image upload (URL injected by S3 middleware)
-    const image = (req as any).uploadedImageUrl || undefined;
+    let image = (req as any).uploadedImageUrl || undefined;
+    
+    // Debug: Check if we have image data in the request
+    console.log('Image handling debug:');
+    console.log('- uploadedImageUrl:', (req as any).uploadedImageUrl);
+    console.log('- req.file:', !!req.file);
+    console.log('- req.body keys:', Object.keys(req.body));
+    
+    // If no uploadedImageUrl but we have file data, handle it here
+    if (!image && req.file) {
+      console.log('Processing image upload in controller...');
+      // This would be handled by the route middleware, but let's see if we get here
+    }
 
     const card = await Card.create({
       deck: deckId,

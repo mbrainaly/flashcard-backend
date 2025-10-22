@@ -10,7 +10,6 @@ import {
 } from '../controllers/deck.controller';
 import {
   getCards,
-  createCard,
   getDueCards,
 } from '../controllers/card.controller';
 import { protect } from '../middleware/auth';
@@ -36,8 +35,8 @@ router.route('/:id')
 
 // Card routes for a specific deck
 router.route('/:deckId/cards')
-  .get(getCards)
-  .post(createCard);
+  .get(getCards);
+  // POST route removed - handled by card.routes.ts with proper multer middleware
 
 router.get('/:deckId/cards/due', getDueCards);
 

@@ -42,28 +42,49 @@ router.use(protect);
 // Routes for cards within a deck
 router.route('/decks/:deckId/cards')
   .get(getCards)
-  .post(upload.single('image'), async (req, res, next) => {
-    try {
-      if (req.file) {
-        const bucket = process.env.AWS_S3_BUCKET as string;
-        const key = `uploads/cards/${Date.now()}-${Math.round(Math.random()*1e9)}${path.extname(req.file.originalname)}`;
-        await s3Client.send(new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: req.file.buffer,
-          ContentType: req.file.mimetype,
-          ACL: 'public-read',
-        }));
-        // attach public URL to request for controller to save
-        const baseUrl = process.env.AWS_CDN_BASE_URL || `https://${bucket}.s3.amazonaws.com`;
-        (req as any).uploadedImageUrl = `${baseUrl}/${key}`;
-      }
+  .post(
+    (req, res, next) => {
+      console.log('=== ROUTE HIT: POST /decks/:deckId/cards ===');
+      console.log('Route params:', req.params);
+      console.log('Content-Type:', req.headers['content-type']);
       next();
-    } catch (e) {
-      console.error('S3 upload error:', e);
-      res.status(500).json({ success: false, message: 'Failed to upload image' });
-    }
-  }, createCard);
+    },
+    upload.single('image'), 
+    async (req, res, next) => {
+      try {
+        // Debug FormData parsing
+        console.log('=== CARD CREATION DEBUG ===');
+        console.log('req.body after multer:', req.body);
+        console.log('req.file:', req.file ? { 
+          fieldname: req.file.fieldname, 
+          originalname: req.file.originalname, 
+          size: req.file.size 
+        } : 'No file');
+        console.log('Content-Type:', req.headers['content-type']);
+        
+        if (req.file) {
+          const bucket = process.env.AWS_S3_BUCKET as string;
+          const key = `uploads/cards/${Date.now()}-${Math.round(Math.random()*1e9)}${path.extname(req.file.originalname)}`;
+          await s3Client.send(new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype,
+            ACL: 'public-read',
+          }));
+          // attach public URL to request for controller to save
+          const baseUrl = process.env.AWS_CDN_BASE_URL || `https://${bucket}.s3.amazonaws.com`;
+          (req as any).uploadedImageUrl = `${baseUrl}/${key}`;
+          console.log('Image uploaded to:', `${baseUrl}/${key}`);
+        }
+        next();
+      } catch (e) {
+        console.error('S3 upload error:', e);
+        res.status(500).json({ success: false, message: 'Failed to upload image' });
+      }
+    },
+    createCard
+  );
 
 router.get('/decks/:deckId/cards/due', getDueCards);
 
